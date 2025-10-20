@@ -1,7 +1,7 @@
-import tkinter as tk
-from tkinter import filedialog
 import os
 import subprocess
+import tkinter as tk
+from tkinter import filedialog
 #main_path 
 #imgs_path 
 #masks_path 
@@ -63,7 +63,7 @@ def main():
         transf_FLUO_RGB = ""
 
     
-
+    #Ask for file paths----------------------------------------------------------------
     # Show a widget with the selected paths
     root = tk.Tk()
     root.title("Paths for the dataset")

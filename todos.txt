@@ -1,0 +1,16 @@
+MAIN OBIETTIVO: crea un nuovo file main.py e inzia a reintrodurre tutto quanto nel modo piu' minimal possibile.
+
+    [] Rinominare in modo significativo le funzioni (camera_matrix(), ecc...)
+    [] Refactoring generale, vedere come possono essere riscritte funzioni tipo display() senza tutti quei global
+    [] Rimozione di codice dubplicato, ad es. corpi di funzione che vengono riscritti all'interno di altre funzioni invece di essere usate
+    [] Rimozione dei global cercando di rendere indipendenti le funzioni (non ho letto tutto ma do per scontato che le var. global vengano usate al difuori del loro scope),
+        i "global" dovrebbero vivere nel main o al di fuori di esso non dentro delle funzioni.
+
+    .
+    .
+    .
+    .
+    .
+    .
+
+    [] Creazione di classi di supporto generale o specifche al progetto.

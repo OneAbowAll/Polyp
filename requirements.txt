@@ -12,5 +12,5 @@ pyglm==2.8.2
 pymeshlab==2023.12.post3
 PyOpenGL==3.1.9
 PyOpenGL==3.1.9
-skimage==0.0
+scikit-image==0.0
 ultralytics==8.3.150

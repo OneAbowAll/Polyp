@@ -1,51 +1,48 @@
 
+import os
+import sys
+import time
+import metrics
+
+import ctypes
+from ctypes import c_uint32, cast, POINTER
+
+import numpy as np
+
 import pygame
+from pygame.locals import *
 
 import pymeshlab
-from pygame.locals import *
 
 from OpenGL.GL import glDrawElements
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GL.shaders import compileProgram, compileShader
+
 from PIL import Image
-import ctypes
 
 import glm
-
 import imgui
 from imgui.integrations.pygame import PygameRenderer
-from  renderable import * 
-import numpy as np
-import os
-import ctypes
-import numpy as np
-import trackball 
-import texture
-import metashape_loader
+
 import fbo
-from  shaders import vertex_shader, fragment_shader, vertex_shader_fsq, fragment_shader_fsq,bbox_shader_str
+import texture
+import trackball
 import maskout
-import time
-import metrics
+import metashape_loader
 
+from renderable import * 
+from shaders import vertex_shader, fragment_shader, vertex_shader_fsq, fragment_shader_fsq,bbox_shader_str
 from plane import fit_plane, project_point_on_plane
-from ctypes import c_uint32, cast, POINTER
-
-
-import sys 
-
 from  detector import apply_yolo
 
 # noinspection PyPackageRequirements
 import pandas as pd
-import os
 from collections import Counter
 
-import memory
-
 def create_buffers_frame():
-    
+    """Create buffer for XYZ lines"""
+
     # Create a new VAO (Vertex Array Object) and bind it
     vertex_array_object = glGenVertexArrays(1)
     glBindVertexArray( vertex_array_object )
@@ -91,9 +88,10 @@ def create_buffers_frame():
     glDisableVertexAttribArray(position)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
-     
+
 def create_buffers_fsq():
-        
+    """Create buffer for Fullscreen Quad"""
+    
     # Create a new VAO (Vertex Array Object) and bind it
     vertex_array_object = glGenVertexArrays(1)
     glBindVertexArray( vertex_array_object )
@@ -119,7 +117,15 @@ def create_buffers_fsq():
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
 
-def create_buffers(verts,wed_tcoord,inds,shader0):
+def create_buffers(verts, wed_tcoord, inds, shader0):
+    """Mesh buffer creation.
+        Creates VAO and VBOs for the mesh
+        - verts: vertex positions
+        - wed_tcoord: texture coordinates
+        - inds: indices
+        - shader0: shader
+    """
+
     global color_buffer
     vert_pos            = np.zeros((len(inds) * 3,  3), dtype=np.float32)
     tcoords             = np.zeros((len(inds) * 3,  2), dtype=np.float32)
@@ -156,9 +162,7 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
     glBufferData(GL_ARRAY_BUFFER,vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
     
 
-    # color
-    
-   
+    # color-------------------------------------------------------- NOTA: probabilmente non mi interessa
     color_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, color_buffer)
     
@@ -171,7 +175,8 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
     
     # Send the data over to the buffer
     glBufferData(GL_ARRAY_BUFFER,maskout.tri_color.nbytes, maskout.tri_color, GL_STATIC_DRAW)
-
+    #---------------------------------------------------------------------------
+    
     # Generate buffers to hold our texcoord
     tcoord_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
@@ -307,16 +312,26 @@ def display_image():
         glBindTexture(GL_TEXTURE_2D, current_texture)
         glUseProgram(0)
 
+
 def camera_matrix(id_camera):
+    """
+    Computes view matrix for camera with id=id_camera.
+    Returns (camera_matrix, camera_frame)
+    """
+
     mat4_np = np.eye(4)
     mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
+
+    # Applies chunk transformations from metashape
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
     chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
     chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
+
     camera_frame = chunk_matrix * (glm.transpose(glm.mat4(*cameras[id_camera].transform)))
     camera_matrix = glm.inverse(camera_frame)
-    return camera_matrix,camera_frame
+
+    return camera_matrix, camera_frame
 
 def camera_matrix_FLUO(id_camera):
     mat4_np = np.eye(4)
@@ -402,7 +417,7 @@ def display(shader0, r,tb,detect,get_uvmap):
     glUniform1i(shader0.uni("uMode"),user_camera)
     glUniform1i(shader0.uni("uModeProj"),project_image)
 
-    set_sensor(shader0,sensors[cameras[id_camera].sensor_id])
+    set_sensor(shader0, sensors[cameras[id_camera].sensor_id])
 
     glActiveTexture(GL_TEXTURE0)
     if(project_image):
@@ -417,7 +432,7 @@ def display(shader0, r,tb,detect,get_uvmap):
     #draw the geometry
 
     glBindVertexArray( r.vao )
-    glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+    glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3)
     glBindVertexArray( 0 )
 
     if not detect: 
@@ -597,18 +612,23 @@ def clicked(x,y):
     p = p_w
     return p, depth
 
-def load_camera_image( id):
+
+def load_camera_image(id):
     global id_loaded
     global texture_IMG_id
-    filename =   imgs_path +"/"+ cameras[id].label+".JPG" 
+
+    filename = imgs_path +"/"+ cameras[id].label+".JPG" 
     print(f"loading {cameras[id].label}.JPG")
+
     glDeleteTextures(1, [texture_IMG_id])
+
     texture_IMG_id,_,__ = texture.load_texture(filename)
     maskout.texture_IMG_id = texture_IMG_id
     id_loaded = id
 
 def load_mesh(filename):
     global ms
+
     # Load the mesh using PyMeshLab
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(filename)
@@ -653,6 +673,7 @@ def load_mesh(filename):
     print(f"faces: {len(faces)}")
 
     return vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h
+
 
 def estimate_range():
     global masks_filenames
@@ -779,7 +800,6 @@ def process_masks(n):
 
     n_masks = n_rest
 
-    
 def load_masks(masks_path):
     global masks_filenames
     global texture_w
@@ -807,8 +827,6 @@ def refresh_domain():
     glBindVertexArray(curr_vao)
     glBindBuffer(GL_ARRAY_BUFFER, curr_vbo)
 
-
-
 class polyp:
     def __init__(self, id_comp, id_mask, area, orientation,centroid,max_diam, min_diam, avg_col):
         self.id_comp = id_comp
@@ -819,7 +837,6 @@ class polyp:
         self.max_diam = max_diam
         self.min_diam = min_diam
         self.avg_col = avg_col
-
 
 def estimate_plane(mask):
     global buf_pos
@@ -933,7 +950,6 @@ def compute_avg_fluo(mask):
     glDeleteBuffers(3, [indexToMasks_ssbo, masks_ssbo, avg_col_ssbo])
     print(f"Average FLUO color for mask {mask.filename}: {avg_col}")
     return avg_col[:3]  # Return only RGB values, ignore alpha
-
 
 def project_to_3D(pol):
     global buf_pos
@@ -1079,10 +1095,6 @@ def project_to_3D(pol):
     pol.tip_1 = stored_pos[cy_int, cx_int]
     pol.tip_1,_ = project_point_on_plane(pol.tip_1, pol.normal, pol.offset)
 
-
-
-
-
 def camera_distance(id_cam_rgb, id_cam_fluo):
     # Calculate the Euclidean distance between the two camera positions
     _,rgb_frame = camera_matrix(id_cam_rgb) 
@@ -1091,7 +1103,6 @@ def camera_distance(id_cam_rgb, id_cam_fluo):
     pos_fluo = np.array(fluo_frame[3])
     
     return np.linalg.norm(pos_rgb - pos_fluo)
-
 
 def neighbor_FLUO_cameras(id_cam_rgb):
     global cameras_FLUO 
@@ -1104,8 +1115,6 @@ def neighbor_FLUO_cameras(id_cam_rgb):
             min_dist = dist
             nearest_idx = idx
     return nearest_idx
-
-
 
 def fill_polyps():
     global polyps
@@ -1188,7 +1197,6 @@ def compute_bounding_boxes_per_camera():
         with open( full_path, "w") as f:
             f.write(f"{bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}\n")
 
-
 def segment_imgs():
     global app_path
     global detect
@@ -1220,7 +1228,6 @@ def show_comp(id_comp):
         id_comp = 0
     maskout.clear_domain()
     maskout.color_connected_component(id_comp)
-
 
 def export_masks_as_3D():
     vertices = np.empty((0, 3), dtype=np.float32)
@@ -1372,7 +1379,6 @@ def clear_redundants():
     for idx in reversed(to_remove):
         maskout.all_masks.connected_components[idx].deleted = True
 
-
 def quantify_coverage(m):
     return sum(m.triangles.values())/m.ones_w
     
@@ -1412,6 +1418,7 @@ def count_polyps():
     # clear_redundants()
     refresh_domain()
 
+
 def set_sensor(shader,sensor):
     glUniform1i(shader.uni("uMasks"),3)
     glUniform1i(shader.uni("resolution_width"),sensor.resolution["width"])
@@ -1424,16 +1431,18 @@ def set_sensor(shader,sensor):
     glUniform1f(shader.uni("k3"),sensor.calibration["k3"])
     glUniform1f(shader.uni("p1"),sensor.calibration["p1"])
     glUniform1f(shader.uni("p2"),sensor.calibration["p2"])
-   
+
+A = 5
+B = 4
 
 def main():
-
-
     glm.silence(4)
+
     global W
     global H
     W = 1200
     H = 800
+
     global masks_filenames
     global tb
 
@@ -1457,7 +1466,8 @@ def main():
     global user_matrix
     global id_mask_to_load
     global n_masks
-  #  global show_metrics
+
+    #global show_metrics
     global polyps
     global app_path
     global main_path
@@ -1522,7 +1532,6 @@ def main():
             print("last.txt does not contain enough lines.")
 
 
-
     if len(sys.argv) > 1:
         main_path = sys.argv[1]
         imgs_path = sys.argv[2]
@@ -1565,6 +1574,7 @@ def main():
 
     tb = trackball.Trackball()
     tb.reset()
+    
     glClearColor(1, 1,1, 0.0)
     glEnable(GL_DEPTH_TEST)
     
@@ -1589,6 +1599,7 @@ def main():
     global cameras 
     global sensor_FLUO
 
+    
     if FLUO:
         sensor_FLUO = metashape_loader.load_sensor_from_xml(metashape_file_FLUO)
         maskout.sensor_FLUO = sensor_FLUO
@@ -1849,7 +1860,7 @@ def main():
                 imgui.text_ansi(f"Curr camera {cameras[id_camera].label}")
                 changed, user_camera = imgui.checkbox("free point of view", user_camera)
                 #changed_im, show_image = imgui.checkbox("show image", show_image)
-               # changed_im, project_image = imgui.checkbox("Project image", project_image)
+                #changed_im, project_image = imgui.checkbox("Project image", project_image)
                 if(id_loaded != id_camera):
                      load_camera_image(id_camera)
 
