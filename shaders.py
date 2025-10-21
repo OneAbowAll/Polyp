@@ -104,11 +104,11 @@ layout(location = 1) out vec4 uvmap;
 layout(location = 2) out vec4 trianglemap;
 layout(location = 3) out vec3 pos;
 
-
+in vec3 vPos;
+in float vIdTriangle;
 in vec2 vTexCoord;
 in vec3 vColor;
-in float vIdTriangle;
-in vec3 vPos;
+
 uniform sampler2D uColorTex;
 uniform int uWriteModelTexCoords;
 uniform sampler2D uMasks;

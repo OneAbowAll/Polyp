@@ -1752,7 +1752,8 @@ def main():
 
 
     while True:    
-        time_delta = clock.tick(60)/1000.0 
+        time_delta = clock.tick(60)/1000.0
+
         for event in pygame.event.get():
             imgui_renderer.process_event(event)
             if event.type == pygame.QUIT:
@@ -1986,7 +1987,7 @@ def main():
         if show_image:
             display_image()
         else:
-            display(shader0, rend,tb, False,False) 
+            display(shader0, rend,tb, False,True) 
 
         check_gl_errors()
 
