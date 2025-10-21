@@ -32,7 +32,7 @@ import maskout
 import metashape_loader
 
 from renderable import * 
-from shaders import vertex_shader, fragment_shader, vertex_shader_fsq, fragment_shader_fsq,bbox_shader_str
+from shaders_copy import VERTEX_SHADER, FRAGMENT_SHADER, vertex_shader_fsq, fragment_shader_fsq,bbox_shader_str
 from plane import fit_plane, project_point_on_plane
 from  detector import apply_yolo
 
@@ -1645,7 +1645,7 @@ def main():
     global shader0
     global shader_fluo
 
-    shader0     = shader(vertex_shader, fragment_shader)
+    shader0     = shader(VERTEX_SHADER, FRAGMENT_SHADER)
     shader_fsq  = shader(vertex_shader_fsq, fragment_shader_fsq)
     shader_fluo = maskout.cshader(maskout.fluo_shader_str)
 

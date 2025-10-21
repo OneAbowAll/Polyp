@@ -37,7 +37,7 @@ import maskout  # CAN IGNORE - polyp detection stuff
 import metashape_loader  # FILE LOADING - important!
 
 from renderable import *  # Renderable object wrapper
-from shaders import vertex_shader, fragment_shader, vertex_shader_fsq, fragment_shader_fsq, bbox_shader_str
+from shaders import VERTEX_SHADER, FRAGMENT_SHADER, vertex_shader_fsq, fragment_shader_fsq, bbox_shader_str
 from plane import fit_plane, project_point_on_plane  # CAN IGNORE
 from detector import apply_yolo  # CAN IGNORE - YOLO detection
 
@@ -497,7 +497,7 @@ def main():
     )
 
     # ========== SHADER COMPILATION - IMPORTANT ==========
-    shader0 = shader(vertex_shader, fragment_shader)
+    shader0 = shader(VERTEX_SHADER, FRAGMENT_SHADER)
     shader_fsq = shader(vertex_shader_fsq, fragment_shader_fsq)
     
     # ========== CREATE OPENGL BUFFERS - IMPORTANT ==========
