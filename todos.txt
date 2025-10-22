@@ -1,5 +1,6 @@
 MAIN OBIETTIVO: crea un nuovo file main.py e inzia a reintrodurre tutto quanto nel modo piu' minimal possibile.
 
+LINEE GUIDA:
     [] Rinominare in modo significativo le funzioni (camera_matrix(), ecc...)
     [] Refactoring generale, vedere come possono essere riscritte funzioni tipo display() senza tutti quei global
     [] Rimozione di codice dubplicato, ad es. corpi di funzione che vengono riscritti all'interno di altre funzioni invece di essere usate
@@ -14,3 +15,17 @@ MAIN OBIETTIVO: crea un nuovo file main.py e inzia a reintrodurre tutto quanto n
     .
 
     [] Creazione di classi di supporto generale o specifche al progetto.
+
+TODOS VERI:
+    [X] ArcBallCamera controller
+    [] Rimettere trasformazione del chunk in modo tale che il modello sia al centro / Centrare il modello
+    [] Ricreare versione semplificata della shader per il modello
+    [] Caricare tutte le camera e i sensori con le loro informazioni (nel modo piu' ordinato possibile)
+    [] Fare switch da camera manuale(arcball) a uno dei sensori caricati 
+    [] Modificare la shader in modo tale da switchare da modalita' "OpenGL" a modalita' "sensore", anche qui in modo ordinato
+
+    .
+    .
+    .
+
+    [] Refactoring di alcune classi, tipo shader per renderle piu' semplici da usare

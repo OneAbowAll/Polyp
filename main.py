@@ -272,8 +272,8 @@ def main():
         glUseProgram(main_shader.program)
         
         glUniformMatrix4fv(main_shader.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
-        test = view_matrix * debugBall.view_matrix()
-        glUniformMatrix4fv(main_shader.uni("uView"), 1, GL_FALSE, glm.value_ptr(test))
+        final_view = view_matrix * debugBall.view_matrix()
+        glUniformMatrix4fv(main_shader.uni("uView"), 1, GL_FALSE, glm.value_ptr(final_view))
 
         glBindVertexArray(rend.vao)
         glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
