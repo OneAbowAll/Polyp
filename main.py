@@ -8,6 +8,7 @@ import glm
 import imgui
 from imgui.integrations.pygame import PygameRenderer
 
+import arcball
 import log
 import texture
 import trackball
@@ -215,13 +216,13 @@ def main():
     
     view_matrix = glm.lookAt(glm.vec3(0.2, 0.2, 0.2), glm.vec3(0), glm.vec3(0, 1, 0));
 
-
+    debugBall = arcball.ArcballCamera(W, H)
     check_gl_errors()
 
     running = True
     while running:
-        glBindFramebuffer(GL_FRAMEBUFFER, 0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
         #Handle PyGames&ImGui events ------------------
         for event in pygame.event.get():
             IMGUI_RENDERER.process_event(event)
@@ -236,22 +237,25 @@ def main():
             # Mouse movement - trackball rotation
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
-                tb.mouse_move(projection_matrix, view_matrix, mouseX, mouseY)
+                debugBall.mouse_move(mouseX, mouseY)
+                #tb.mouse_move(projection_matrix, view_matrix, mouseX, mouseY)
             
             # Mouse wheel - zoom
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
-                tb.mouse_scroll(xoffset, yoffset)
+                #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button not in (4, 5):  # Not mouse wheel
+                if event.button == 1:  # Not mouse wheel
                     mouseX, mouseY = event.pos
-                    tb.mouse_press(projection_matrix, view_matrix, mouseX, mouseY)
+                    debugBall.mouse_pressed(mouseX, mouseY)
+                    #tb.mouse_press(projection_matrix, view_matrix, mouseX, mouseY)
             
             if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:  # Left mouse button
-                    tb.mouse_release()
+                    debugBall.mouse_release()
+                    #tb.mouse_release()
         #----------------------------------------------
 
         #Imgui ----------------------------------------
@@ -268,7 +272,8 @@ def main():
         glUseProgram(main_shader.program)
         
         glUniformMatrix4fv(main_shader.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
-        glUniformMatrix4fv(main_shader.uni("uView"), 1, GL_FALSE, glm.value_ptr(view_matrix))
+        test = view_matrix * debugBall.view_matrix()
+        glUniformMatrix4fv(main_shader.uni("uView"), 1, GL_FALSE, glm.value_ptr(test))
 
         glBindVertexArray(rend.vao)
         glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
