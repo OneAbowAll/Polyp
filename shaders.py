@@ -4,16 +4,20 @@ VERTEX_SHADER = """
 in vec3 aPosition;
 in vec2 aTexCoord;
 
+out vec4 vPos;
+out vec2 vTexCoord;
+
 uniform mat4 uProj; 
 uniform mat4 uView;
 
 
 void main(void)
 {
-    vec4 pos = uProj*uView*vec4(aPosition, 1.0);
-    gl_Position = pos;
+    vTexCoord = aTexCoord;
 
-    return;
+    vec4 pos = uProj*uView*vec4(aPosition, 1.0);
+    vPos = pos;
+    gl_Position = pos;
 }
 """
 
@@ -21,9 +25,14 @@ FRAGMENT_SHADER = """
 #version 460 core
 layout(location = 0) out vec4 color;
 
+in vec4 vPos;
+in vec2 vTexCoord;
+
+uniform sampler2D uColorTex;
+
 void main()
-{
-    color = vec4(1, 0, 0, 1);
+{   
+    color = vec4(texture(uColorTex, vTexCoord.xy).rgb, 1);
 }
 """
 

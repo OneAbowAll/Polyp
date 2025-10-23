@@ -1,4 +1,5 @@
 import os
+import sys
 import pygame
 import pymeshlab
 import numpy as np
@@ -107,14 +108,12 @@ def create_mesh_buffers(verts, wed_tcoord, inds, shader):
     glBufferData(GL_ARRAY_BUFFER, vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
     
     # Texture coordinates
-    """
     tcoord_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
     position = glGetAttribLocation(shader.program, 'aTexCoord')
     glEnableVertexAttribArray(position)
     glVertexAttribPointer(position, 2, GL_FLOAT, False, 0, None)
     glBufferData(GL_ARRAY_BUFFER, tcoords.nbytes, tcoords, GL_STATIC_DRAW)
-    """
     
     # Unbind
     glBindVertexArray(0)
@@ -169,14 +168,50 @@ def load_mesh(filename):
     
     return vertices, faces, wed_tcoord, bbox_min, bbox_max, texture_id, w, h
 
+def load_filepaths():
+    """ 
+        Try to read the filepaths from sys.argv or last.txt.\n
+        Output:
+        - main_path
+        - imgs_path
+        - mesh_name
+        - metashape_file 
+    """
+    main_path = imgs_path = mesh_name = metashape_file = ""
+    
+    if(len(sys.argv) == 4):
+        main_path = sys.argv[1]
+        imgs_path = sys.argv[2]
+        mesh_name = sys.argv[3]
+        metashape_file = sys.argv[4]
+    else:
+        with open("last.txt", "r") as f:
+            lines = f.read().splitlines()
+            if len(lines) >= 5:
+                main_path = lines[0]
+                imgs_path = lines[1]
+                mesh_name = lines[3]
+                metashape_file = lines[4]
+            else:
+                print("[ERROR] last.txt does not contain enough lines.")
+
+    log.print_info(f"Main path: {main_path}")
+    log.print_info(f"Images path: {imgs_path}")
+    log.print_info(f"Mesh: {mesh_name}")
+    log.print_info(f"Metashape file: {metashape_file}")
+    return main_path, imgs_path, mesh_name, metashape_file
 
 def main():
     glm.silence(4)
+
+    #Load filepaths
+    MAIN_PATH, IMGS_PATH, MESH_NAME, METASHAPE_FILE = load_filepaths()
 
     #Window context variables
     W, H = 1200, 800
     SCREEN = None
     CLOCK = None
+    DELTA_TIME = 0
 
     #Setup PyGame
     pygame.init()
@@ -184,10 +219,12 @@ def main():
     SCREEN = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
     CLOCK = pygame.time.Clock()
 
-
     log.print_info(f"OpenGL Version: {glGetString(GL_VERSION).decode()}")
     log.print_info(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION).decode()}")
 
+    #OpenGl settings
+    glClearColor(0, 0, 0, 1)
+    glEnable(GL_DEPTH_TEST)
 
     # Initialize ImGui
     imgui.create_context()
@@ -217,6 +254,9 @@ def main():
     view_matrix = glm.lookAt(glm.vec3(0.2, 0.2, 0.2), glm.vec3(0), glm.vec3(0, 1, 0));
 
     debugBall = arcball.ArcballCamera(W, H)
+    center = (bbox_min+bbox_max)/2.0
+    center = glm.vec3(center[0], center[1], center[2])
+    debugBall.set_center(center, 1)
     check_gl_errors()
 
     running = True
@@ -243,6 +283,7 @@ def main():
             # Mouse wheel - zoom
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
+                debugBall.set_distance(debugBall.distance + yoffset * 5 * DELTA_TIME)
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
@@ -271,10 +312,16 @@ def main():
         #Rendering ------------------------------------
         glUseProgram(main_shader.program)
         
+        #Set view/proj matrices
         glUniformMatrix4fv(main_shader.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
-        final_view = view_matrix * debugBall.view_matrix()
+        final_view = debugBall.get_view_matrix()
         glUniformMatrix4fv(main_shader.uni("uView"), 1, GL_FALSE, glm.value_ptr(final_view))
 
+        #Activate renderable obj's texture
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, rend.texture_id)
+
+        #Render the actual renderable obj
         glBindVertexArray(rend.vao)
         glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
         glBindVertexArray(0)
@@ -289,7 +336,7 @@ def main():
         IMGUI_RENDERER.render(imgui.get_draw_data())
 
         pygame.display.flip()
-        CLOCK.tick(60)
+        DELTA_TIME = CLOCK.tick(60) / 1000
         #----------------------------------------------
 
     #Stuff to do before close

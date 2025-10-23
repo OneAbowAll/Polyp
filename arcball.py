@@ -1,4 +1,7 @@
+from gettext import translation
 import glm
+from networkx import center
+import numpy
 
 
 class ArcballCamera:
@@ -8,12 +11,14 @@ class ArcballCamera:
         
         self.center = glm.vec3(0)
         self.distance = 2.0
-        self.radius = 1.0
 
         self.last_point = glm.vec3(0)
         self.rotation = glm.mat4(1.0)
 
         self.is_dragging = False
+
+        self.is_dirty = True
+        self.view_matrix = glm.mat4(1.0)
 
     def mouse_pressed(self, screen_x, screen_y):
         self.last_point = self.get_arcball_vector(screen_x, screen_y)
@@ -38,6 +43,9 @@ class ArcballCamera:
         delta_rot = glm.rotate(glm.mat4(1.0), angle, rotation_axis)
         self.rotation = delta_rot * self.rotation
         self.last_point = P1
+        
+        #Mark viewmatrix as dirty
+        self.is_dirty = True
 
     def get_arcball_vector(self, screen_x, screen_y):
         """
@@ -63,5 +71,20 @@ class ArcballCamera:
 
         return P
     
-    def view_matrix(self):
-        return self.rotation
+    def set_center(self, center, distance):
+        self.center = center
+        self.is_dirty = True
+
+    def set_distance(self, distance):
+        self.distance = glm.clamp(distance, 0.1, 10)
+        self.is_dirty = True
+    
+    def get_view_matrix(self):
+        if(not self.is_dirty):
+            return self.view_matrix
+        
+        translation_matrix = glm.translate(glm.mat4(1.0), self.center)
+        scaling_matrix = glm.scale(glm.mat4(1.0), glm.vec3(self.distance))
+        self.view_matrix = translation_matrix * scaling_matrix * self.rotation * glm.inverse(translation_matrix)
+
+        return self.view_matrix
