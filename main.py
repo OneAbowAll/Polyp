@@ -165,7 +165,7 @@ def load_mesh(filename):
             vertices: {len(vertices)},\n\
             faces: {len(faces)},\n\
             Bounding box: {bbox_min} to {bbox_max}\n\
-        ]")
+        ]\n")
     
     return vertices, faces, wed_tcoord, bbox_min, bbox_max, texture_id, w, h
 
@@ -199,14 +199,11 @@ def load_filepaths():
     log.print_info(f"Main path: {main_path}")
     log.print_info(f"Images path: {imgs_path}")
     log.print_info(f"Mesh: {mesh_name}")
-    log.print_info(f"Metashape file: {metashape_file}")
+    log.print_info(f"Metashape file: {metashape_file}\n")
     return main_path, imgs_path, mesh_name, metashape_file
 
 def main():
     glm.silence(4)
-
-    #Load filepaths
-    MAIN_PATH, IMGS_PATH, MESH_NAME, METASHAPE_FILE = load_filepaths()
 
     #Window context variables
     W, H = 1200, 800
@@ -221,7 +218,10 @@ def main():
     CLOCK = pygame.time.Clock()
 
     log.print_info(f"OpenGL Version: {glGetString(GL_VERSION).decode()}")
-    log.print_info(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION).decode()}")
+    log.print_info(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION).decode()}\n")
+
+    #Load filepaths
+    MAIN_PATH, IMGS_PATH, MESH_NAME, METASHAPE_FILE = load_filepaths()
 
     #OpenGl settings
     glClearColor(0, 0, 0, 1)
