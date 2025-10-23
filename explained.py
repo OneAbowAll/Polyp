@@ -31,6 +31,7 @@ from imgui.integrations.pygame import PygameRenderer
 
 # Custom modules
 import fbo  # Framebuffer objects
+from shader import shader
 import texture  # Texture loading
 import trackball  # Camera control
 import maskout  # CAN IGNORE - polyp detection stuff

@@ -19,7 +19,7 @@ LINEE GUIDA:
 TODOS VERI:
     [X] ArcBallCamera controller
     [X] Centrare il modello
-    [] Ricreare versione semplificata della shader per il modello
+    [X] Ricreare versione semplificata della shader per il modello
     [] Rimettere trasformazione del chunk in modo tale che il modello sia al centro
     [] Caricare tutte le camera e i sensori con le loro informazioni (nel modo piu' ordinato possibile)
     [] Fare switch da camera manuale(arcball) a uno dei sensori caricati 

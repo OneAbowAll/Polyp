@@ -11,9 +11,10 @@ from imgui.integrations.pygame import PygameRenderer
 
 import arcball
 import log
+import shader
 import texture
 import trackball
-import shaders
+from shaders import VERTEX_SHADER, FRAGMENT_SHADER
 from renderable import *
 
 DBG_FILEPATH = "C:/Users/dadod/Downloads/test2/model.ply"
@@ -232,7 +233,7 @@ def main():
     imgui.get_io().display_size = (W, H)
 
     #Debug tests
-    main_shader = shader(shaders.VERTEX_SHADER, shaders.FRAGMENT_SHADER)
+    main_shader = shader.load_shader_from_files("main") #shader.Shader(VERTEX_SHADER, FRAGMENT_SHADER)
     
     vertices, faces, wed_tcoords, bbox_min, bbox_max, texture_id, tex_w, tex_h = load_mesh(DBG_FILEPATH)
     rend = renderable(
@@ -246,17 +247,13 @@ def main():
     mesh_vao = create_mesh_buffers(vertices, wed_tcoords, faces, main_shader)
     rend.vao = mesh_vao
     
-
-    tb = trackball.Trackball()
-    tb.reset()
+    #Camera 
     projection_matrix = glm.perspective(glm.radians(45), 1.5,0.1,10)
-    
-    view_matrix = glm.lookAt(glm.vec3(0.2, 0.2, 0.2), glm.vec3(0), glm.vec3(0, 1, 0));
 
-    debugBall = arcball.ArcballCamera(W, H)
+    arcBall = arcball.ArcballCamera(W, H)
     center = (bbox_min+bbox_max)/2.0
     center = glm.vec3(center[0], center[1], center[2])
-    debugBall.set_center(center, 1)
+    arcBall.set_center(center, 1)
     check_gl_errors()
 
     running = True
@@ -277,25 +274,25 @@ def main():
             # Mouse movement - trackball rotation
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
-                debugBall.mouse_move(mouseX, mouseY)
+                arcBall.mouse_move(mouseX, mouseY)
                 #tb.mouse_move(projection_matrix, view_matrix, mouseX, mouseY)
             
             # Mouse wheel - zoom
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
-                debugBall.set_distance(debugBall.distance + yoffset * 5 * DELTA_TIME)
+                arcBall.set_distance(arcBall.distance + yoffset * 5 * DELTA_TIME)
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Not mouse wheel
                     mouseX, mouseY = event.pos
-                    debugBall.mouse_pressed(mouseX, mouseY)
+                    arcBall.mouse_pressed(mouseX, mouseY)
                     #tb.mouse_press(projection_matrix, view_matrix, mouseX, mouseY)
             
             if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:  # Left mouse button
-                    debugBall.mouse_release()
+                    arcBall.mouse_release()
                     #tb.mouse_release()
         #----------------------------------------------
 
@@ -313,9 +310,9 @@ def main():
         glUseProgram(main_shader.program)
         
         #Set view/proj matrices
-        glUniformMatrix4fv(main_shader.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
-        final_view = debugBall.get_view_matrix()
-        glUniformMatrix4fv(main_shader.uni("uView"), 1, GL_FALSE, glm.value_ptr(final_view))
+        main_shader.set_mat4("uProj", projection_matrix)
+        final_view = arcBall.get_view_matrix()
+        main_shader.set_mat4("uView", final_view)
 
         #Activate renderable obj's texture
         glActiveTexture(GL_TEXTURE0)

@@ -26,6 +26,7 @@ import imgui
 from imgui.integrations.pygame import PygameRenderer
 
 import fbo
+from shader import shader
 import texture
 import trackball
 import maskout
