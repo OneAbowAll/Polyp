@@ -14,6 +14,7 @@ import log
 import shader
 import texture
 import trackball
+import metashape_loader
 from shaders import VERTEX_SHADER, FRAGMENT_SHADER
 from renderable import *
 
@@ -161,11 +162,11 @@ def load_mesh(filename):
     bbox_max = vertices.max(axis=0)
     
     log.print_info(f"Loaded mesh {filename}: \n\
-        [ \n\
-            vertices: {len(vertices)},\n\
-            faces: {len(faces)},\n\
-            Bounding box: {bbox_min} to {bbox_max}\n\
-        ]\n")
+    [ \n\
+        vertices: {len(vertices)},\n\
+        faces: {len(faces)},\n\
+        Bounding box: {bbox_min} to {bbox_max}\n\
+    ]\n")
     
     return vertices, faces, wed_tcoord, bbox_min, bbox_max, texture_id, w, h
 
@@ -202,14 +203,33 @@ def load_filepaths():
     log.print_info(f"Metashape file: {metashape_file}\n")
     return main_path, imgs_path, mesh_name, metashape_file
 
+def set_sensor(shader: shader.Shader, sensor):
+    shader.set_int("resolution_width", sensor.resolution["width"])
+    shader.set_int("resolution_height", sensor.resolution["height"])
+
+    shader.set_float("f", sensor.calibration["f"])
+    shader.set_float("cx", sensor.calibration["cx"])
+    shader.set_float("cy", sensor.calibration["cy"])
+    shader.set_float("k1", sensor.calibration["k1"])
+    shader.set_float("k2", sensor.calibration["k2"])
+    shader.set_float("k3", sensor.calibration["k3"])
+    shader.set_float("p1", sensor.calibration["p1"])
+    shader.set_float("p2", sensor.calibration["p2"])
+
+
+#Window context variables
+W, H = 1200, 800
+SCREEN = None
+CLOCK = None
+DELTA_TIME = 0
+
+#Metashape metadata
+cameras = []
+camera_matrices = []
+
+
 def main():
     glm.silence(4)
-
-    #Window context variables
-    W, H = 1200, 800
-    SCREEN = None
-    CLOCK = None
-    DELTA_TIME = 0
 
     #Setup PyGame
     pygame.init()
@@ -217,45 +237,77 @@ def main():
     SCREEN = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
     CLOCK = pygame.time.Clock()
 
+    # Initialize ImGui
+    imgui.create_context()
+    IMGUI_RENDERER = PygameRenderer()
+    imgui.get_io().display_size = (W, H)
+
     log.print_info(f"OpenGL Version: {glGetString(GL_VERSION).decode()}")
     log.print_info(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION).decode()}\n")
 
     #Load filepaths
     MAIN_PATH, IMGS_PATH, MESH_NAME, METASHAPE_FILE = load_filepaths()
 
-    #OpenGl settings
-    glClearColor(0, 0, 0, 1)
-    glEnable(GL_DEPTH_TEST)
-
-    # Initialize ImGui
-    imgui.create_context()
-    IMGUI_RENDERER = PygameRenderer()
-    imgui.get_io().display_size = (W, H)
-
-    #Debug tests
-    main_shader = shader.load_shader_from_files("main") #shader.Shader(VERTEX_SHADER, FRAGMENT_SHADER)
+    #Load Sensors & Cameras
+    sensors = metashape_loader.load_sensors_from_xml( os.path.join(MAIN_PATH, METASHAPE_FILE) )
     
+    cameras, chunk_rot, chunk_transl, chunk_scal = metashape_loader.load_cameras_from_xml( os.path.join(MAIN_PATH, METASHAPE_FILE) )
+    chunk_rot = np.array(chunk_rot)
+    chunk_transl = np.array(chunk_transl)
+
+    log.print_info(f"    Loaded { len(cameras) } cameras,\n\
+    Chunk Rotation:\n\
+        {chunk_rot}\n\
+    ,\n\
+    Chunk Rotation:\n\
+        {chunk_transl}\n\
+    ,\n\
+    Chunk Scale:\n\
+        {chunk_scal}\n\
+    ,\n\n\
+    ")
+
+    #Load shaders
+    SHADER_MAIN = shader.load_shader_from_files("main") #shader.Shader(VERTEX_SHADER, FRAGMENT_SHADER)
+    SHADER_FRAME = shader.load_shader_from_files("frame")
+    
+    #Load mesh
     vertices, faces, wed_tcoords, bbox_min, bbox_max, texture_id, tex_w, tex_h = load_mesh(DBG_FILEPATH)
     rend = renderable(
-        vao=None,
-        n_verts=len(vertices),
-        n_faces=len(faces),
-        texture_id=texture_id,
-        mask_id=None
+        vao = create_mesh_buffers(vertices, wed_tcoords, faces, SHADER_MAIN),
+        n_verts = len(vertices),
+        n_faces = len(faces),
+        texture_id = texture_id,
+        mask_id = None
     )
-
-    mesh_vao = create_mesh_buffers(vertices, wed_tcoords, faces, main_shader)
-    rend.vao = mesh_vao
     
-    #Camera 
+    #Camera
     projection_matrix = glm.perspective(glm.radians(45), 1.5,0.1,10)
 
     arcBall = arcball.ArcballCamera(W, H)
     center = (bbox_min+bbox_max)/2.0
     center = glm.vec3(center[0], center[1], center[2])
     arcBall.set_center(center, 1)
-    check_gl_errors()
 
+    #Load camera frame
+    camera_frame_vao = create_buffers_frame(SHADER_FRAME)
+    center_frame_matrix = glm.translate(glm.mat4(1.0), center) * glm.scale(glm.mat4(1.0), glm.vec3(0.125))
+
+    #Calculate chunk matrrix
+    mat4_np = np.eye(4)
+    mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
+    chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
+    chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
+    chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
+    chunk_matrix = chunk_tra_matrix * chunk_sca_matrix * chunk_rot_matrix
+
+    #Settings
+    view_mode = False #False(0) for arcball camera controll - True(1) for look through sensor mode
+    selected_camera_id = 0
+    
+    #OpenGl settings
+    glClearColor(0, 0, 0, 1)
+    glEnable(GL_DEPTH_TEST)
     running = True
     while running:
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -263,9 +315,12 @@ def main():
         #Handle PyGames&ImGui events ------------------
         for event in pygame.event.get():
             IMGUI_RENDERER.process_event(event)
-
+            
             if event.type == pygame.QUIT:
                 running = False;
+            
+            if imgui.get_io().want_capture_mouse:
+                continue;
 
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_ESCAPE:
@@ -280,7 +335,7 @@ def main():
             # Mouse wheel - zoom
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
-                arcBall.set_distance(arcBall.distance + yoffset * 5 * DELTA_TIME)
+                arcBall.set_distance(arcBall.distance + yoffset * 5 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
@@ -300,19 +355,23 @@ def main():
         imgui.new_frame()
         if imgui.begin_main_menu_bar().opened:
             if imgui.begin_menu('Actions', True).opened:
-                imgui.text("Test")
+                _, view_mode = imgui.checkbox("View through cameras", view_mode)
+                selected_camera_id_changed, selected_camera_id = imgui.input_int("Camera ID", selected_camera_id, 1, 100)
+                
+                if selected_camera_id_changed:
+                    selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
                 imgui.end_menu()
 
             imgui.end_main_menu_bar()
+
         #----------------------------------------------
 
         #Rendering ------------------------------------
-        glUseProgram(main_shader.program)
-        
+        glUseProgram(SHADER_MAIN.program)
         #Set view/proj matrices
-        main_shader.set_mat4("uProj", projection_matrix)
+        SHADER_MAIN.set_mat4("uProj", projection_matrix)
         final_view = arcBall.get_view_matrix()
-        main_shader.set_mat4("uView", final_view)
+        SHADER_MAIN.set_mat4("uView", final_view)
 
         #Activate renderable obj's texture
         glActiveTexture(GL_TEXTURE0)
@@ -324,8 +383,33 @@ def main():
         glBindVertexArray(0)
     
         glBindVertexArray(0)
-
         glUseProgram(0)
+
+        #TODO: Make this and above an indipendent and reusable function
+        glUseProgram(SHADER_FRAME.program)
+        #Set view/proj matrices
+        SHADER_FRAME.set_mat4("uProj", projection_matrix)
+        SHADER_FRAME.set_mat4("uView", final_view)
+        SHADER_FRAME.set_mat4("uModel", center_frame_matrix)
+        
+
+        glBindVertexArray(camera_frame_vao)
+
+        #Draw origin frame
+        glDrawArrays(GL_LINES, 0, 6)
+
+        #Draw all the camera's frame
+        for i in range(0,len(cameras)):
+            camera_frame = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
+            SHADER_FRAME.set_mat4("uModel", camera_frame)
+            glDrawArrays(GL_LINES, 0, 6)
+
+        glBindVertexArray(0)
+        glUseProgram(0)
+        #----------------------------------------------
+
+        #Check for OpenGL errors ----------------------
+        check_gl_errors()
         #----------------------------------------------
 
         #End of frame----------------------------------
@@ -340,6 +424,7 @@ def main():
     log.print_debug(f"Test {W}:{H}")
     log.print_warning(f"Test {W}:{H}")
     log.print_info(f"Test {W}:{H}")
+
     return 0;
 
 if __name__ == '__main__':

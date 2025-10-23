@@ -6,6 +6,8 @@
     "python.analysis.diagnosticSeverityOverrides": {
         "reportAttributeAccessIssue": "none",
         "reportOperatorIssue" : "information",
-        "reportOptionalOperand": "none"
+        "reportOptionalOperand": "none",
+        "reportAssignmentType" : "none",
+        "reportOptionalMemberAccess" : "none"
     }
 }

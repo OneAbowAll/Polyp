@@ -145,7 +145,6 @@ def load_sensors_from_xml(file_path):
 
     return sensors
 
-
 def load_sensor_from_xml(file_path):
     with zipfile.ZipFile(file_path, 'r') as zip_ref:
         with zip_ref.open("doc.xml") as file:
@@ -227,7 +226,8 @@ def load_sensor_from_xml(file_path):
     return sensor
 
 class Camera:
-    def __init__(self, id, sensor_id, component_id, label, enabled, transform, rotation_covariance, location_covariance, orientation):
+    def __init__(self, id, sensor_id, component_id, label, enabled, transform,
+                 rotation_covariance, location_covariance, orientation):
         self.id = id
         self.sensor_id = sensor_id
         self.component_id = component_id
@@ -245,22 +245,6 @@ class Camera:
             f"rotation_covariance={self.rotation_covariance}, location_covariance={self.location_covariance}, "
             f"orientation={self.orientation})"
         )
-
-
-import xml.etree.ElementTree as ET
-
-class Camera:
-    def __init__(self, id, sensor_id, component_id, label, enabled, transform,
-                 rotation_covariance, location_covariance, orientation):
-        self.id = id
-        self.sensor_id = sensor_id
-        self.component_id = component_id
-        self.label = label
-        self.enabled = enabled
-        self.transform = transform
-        self.rotation_covariance = rotation_covariance
-        self.location_covariance = location_covariance
-        self.orientation = orientation
 
 def load_cameras_from_xml(file_path):
     """
@@ -350,6 +334,16 @@ def load_cameras_from_xml(file_path):
                 orientation=orientation,
             )
             cameras.append(camera)
+
+    #If rotation or translation or scale are None (or one of them) fallback to identity.
+    if rotation_matrix is None:
+        rotation_matrix = [1,0,0,0,1,0,0,0,1]
+    
+    if translation is None:
+        translation = [0,0,0]
+    
+    if scale_value is None:
+        scale_value = 1
 
     return cameras, rotation_matrix, translation, scale_value
 
