@@ -9,5 +9,7 @@
         "reportOptionalOperand": "none",
         "reportAssignmentType" : "none",
         "reportOptionalMemberAccess" : "none"
-    }
+    },
+
+    "glsllint.glslangValidatorPath": "C:\\Users\\dadod\\OneDrive\\Desktop\\glslangValidator.exe"
 }

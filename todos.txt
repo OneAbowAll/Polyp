@@ -20,13 +20,13 @@ TODOS VERI:
     [X] ArcBallCamera controller
     [X] Centrare il modello
     [X] Ricreare versione semplificata della shader per il modello
-    [] Rimettere trasformazione del chunk in modo tale che il modello sia al centro
-    [] Caricare tutte le camera e i sensori con le loro informazioni (nel modo piu' ordinato possibile)
-    [] Fare switch da camera manuale(arcball) a uno dei sensori caricati 
-    [] Modificare la shader in modo tale da switchare da modalita' "OpenGL" a modalita' "sensore", anche qui in modo ordinato
+    [X] Rimettere trasformazione del chunk in modo tale che il modello sia al centro
+    [X] Caricare tutte le camera e i sensori con le loro informazioni (nel modo piu' ordinato possibile)
+    [XX] Fare switch da camera manuale(arcball) a uno dei sensori caricati 
+    [X] Modificare la shader in modo tale da switchare da modalita' "OpenGL" a modalita' "sensore", anche qui in modo ordinato
 
     .
     .
     .
 
-    [] Refactoring di alcune classi, tipo shader per renderle piu' semplici da usare
+    [X] Refactoring di alcune classi, tipo shader per renderle piu' semplici da usare

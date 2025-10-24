@@ -65,5 +65,5 @@ class Shader:
     def set_vec3(self, name, value: glm.vec3):
         glUniform3f(self.uni(name), value.x, value.y, value.z)
 
-    def set_mat4(self, name, value: glm.mat4x4):
+    def set_mat4(self, name, value: glm.mat4):
         glUniformMatrix4fv(self.uni(name), 1, GL_FALSE, glm.value_ptr(value))

@@ -217,19 +217,14 @@ def set_sensor(shader: shader.Shader, sensor):
     shader.set_float("p2", sensor.calibration["p2"])
 
 
-#Window context variables
-W, H = 1200, 800
-SCREEN = None
-CLOCK = None
-DELTA_TIME = 0
-
-#Metashape metadata
-cameras = []
-camera_matrices = []
-
-
 def main():
     glm.silence(4)
+
+    #Window context variables
+    W, H = 1200, 800
+    SCREEN = None
+    CLOCK = None
+    DELTA_TIME = 0
 
     #Setup PyGame
     pygame.init()
@@ -301,9 +296,24 @@ def main():
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
     chunk_matrix = chunk_tra_matrix * chunk_sca_matrix * chunk_rot_matrix
 
-    #Settings
+    #Calculate all camera matrices
+    camera_matrices : list[glm.mat4] = [glm.mat4] * len(cameras)
+    for i in range(0, len(cameras)):
+        camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
+
+
+    #Application settings
     view_mode = False #False(0) for arcball camera controll - True(1) for look through sensor mode
     selected_camera_id = 0
+    selected_camera_id_changed = False
+
+    show_origin_frame = True
+    show_camera_frames = True
+    
+    #Set first sensor
+    glUseProgram(SHADER_MAIN.program)
+    set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
+    glUseProgram(0)
     
     #OpenGl settings
     glClearColor(0, 0, 0, 1)
@@ -329,25 +339,30 @@ def main():
             # Mouse movement - trackball rotation
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
-                arcBall.mouse_move(mouseX, mouseY)
+                if(not view_mode):
+                    arcBall.mouse_move(mouseX, mouseY)
                 #tb.mouse_move(projection_matrix, view_matrix, mouseX, mouseY)
             
             # Mouse wheel - zoom
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
-                arcBall.set_distance(arcBall.distance + yoffset * 5 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
+                if(not view_mode):
+                    arcBall.set_distance(arcBall.distance + yoffset * 5 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Not mouse wheel
                     mouseX, mouseY = event.pos
-                    arcBall.mouse_pressed(mouseX, mouseY)
+                    
+                    if(not view_mode):
+                        arcBall.mouse_pressed(mouseX, mouseY)
                     #tb.mouse_press(projection_matrix, view_matrix, mouseX, mouseY)
             
             if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:  # Left mouse button
-                    arcBall.mouse_release()
+                    if(not view_mode):
+                        arcBall.mouse_release()
                     #tb.mouse_release()
         #----------------------------------------------
 
@@ -360,6 +375,15 @@ def main():
                 
                 if selected_camera_id_changed:
                     selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
+
+                    glUseProgram(SHADER_MAIN.program)
+                    set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
+                    glUseProgram(0)
+                    
+
+                imgui.separator()
+                _, show_origin_frame = imgui.checkbox("Show origin frame", show_origin_frame)
+                _, show_camera_frames = imgui.checkbox("Show camera frames", show_camera_frames)
                 imgui.end_menu()
 
             imgui.end_main_menu_bar()
@@ -368,9 +392,17 @@ def main():
 
         #Rendering ------------------------------------
         glUseProgram(SHADER_MAIN.program)
+        SHADER_MAIN.set_int("uViewMode", view_mode)
+
         #Set view/proj matrices
         SHADER_MAIN.set_mat4("uProj", projection_matrix)
-        final_view = arcBall.get_view_matrix()
+
+        final_view : glm.mat4
+        if(view_mode):
+            final_view = glm.inverse(camera_matrices[selected_camera_id])
+        else:
+            final_view = arcBall.get_view_matrix()
+        
         SHADER_MAIN.set_mat4("uView", final_view)
 
         #Activate renderable obj's texture
@@ -396,13 +428,14 @@ def main():
         glBindVertexArray(camera_frame_vao)
 
         #Draw origin frame
-        glDrawArrays(GL_LINES, 0, 6)
+        if(show_origin_frame):
+            glDrawArrays(GL_LINES, 0, 6)
 
         #Draw all the camera's frame
-        for i in range(0,len(cameras)):
-            camera_frame = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
-            SHADER_FRAME.set_mat4("uModel", camera_frame)
-            glDrawArrays(GL_LINES, 0, 6)
+        if(show_camera_frames):
+            for i in range(0,len(cameras)):
+                SHADER_FRAME.set_mat4("uModel", camera_matrices[i])
+                glDrawArrays(GL_LINES, 0, 6)
 
         glBindVertexArray(0)
         glUseProgram(0)
