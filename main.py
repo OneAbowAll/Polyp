@@ -370,9 +370,12 @@ def main():
         imgui.new_frame()
         if imgui.begin_main_menu_bar().opened:
             if imgui.begin_menu('Actions', True).opened:
-                _, view_mode = imgui.checkbox("View through cameras", view_mode)
+                view_mode_changed, view_mode = imgui.checkbox("View through cameras", view_mode)
                 selected_camera_id_changed, selected_camera_id = imgui.input_int("Camera ID", selected_camera_id, 1, 100)
                 
+                if view_mode_changed:
+                    show_camera_frames = not view_mode  #Se vai in modalita' metaashape-camera nascondi in automatico i camera frames
+
                 if selected_camera_id_changed:
                     selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
 

@@ -148,7 +148,7 @@ def main():
             f.write(metashape_name_FLUO_var.get() + "\n")
             f.write(transf_FLUO_RGB_var.get() + "\n")
             subprocess.Popen([
-                "python", "polypstats.py",
+                "python", "main.py",
                 main_path_var.get(),
                 imgs_path_var.get(),
                 masks_path_var.get(),
