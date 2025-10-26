@@ -18,8 +18,6 @@ import metashape_loader
 from shaders import VERTEX_SHADER, FRAGMENT_SHADER
 from renderable import *
 
-DBG_FILEPATH = "C:/Users/dadod/Downloads/test2/model.ply"
-
 def create_buffers_frame(shader):
     """Create buffer for XYZ lines. Returns generated VAO's id."""
 
@@ -267,7 +265,7 @@ def main():
     SHADER_FRAME = shader.load_shader_from_files("frame")
     
     #Load mesh
-    vertices, faces, wed_tcoords, bbox_min, bbox_max, texture_id, tex_w, tex_h = load_mesh(DBG_FILEPATH)
+    vertices, faces, wed_tcoords, bbox_min, bbox_max, texture_id, tex_w, tex_h = load_mesh( os.path.join(MAIN_PATH, MESH_NAME) )
     rend = renderable(
         vao = create_mesh_buffers(vertices, wed_tcoords, faces, SHADER_MAIN),
         n_verts = len(vertices),

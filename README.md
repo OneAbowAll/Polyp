@@ -1,11 +1,19 @@
-# polypstats
+# Polyp
 
-#to install all required modules run
-pip install -r requirements.txt
+## Requirements:
+- Python 3.11
 
-#launch polypstats_laungher.py to select the paths
-python polypstats_launcher.py
+## Installation:
 
-#if current paths are already set you can launch polypstats.py directly
-python polypstats.py
+    pip install -r requirements.txt
+
+## Usage
+When launching for the first time or if you want to change the filepaths run:
+
+    python polypstats_launcher.py
+
+After the file paths have been configured you can run:
+
+    python main.py
+
 

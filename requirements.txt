@@ -5,4 +5,5 @@ pygame_gui==0.6.14
 pyglm==2.8.2
 pymeshlab==2023.12.post3
 PyOpenGL==3.1.9
-scikit-image==0.0
+pillow==12.0.0
+scikit-image==0.25.2
