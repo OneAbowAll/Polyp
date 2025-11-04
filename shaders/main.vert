@@ -68,8 +68,10 @@ void main(void)
         gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.0*focmm), 1.0);
     }
     else
-    {   
-        
+    {
+        if(uViewMode == 2)
+            vPos = (uProj*uView*uModel*vec4(aPosition, 1.0)).xyz;
+
         vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
         gl_Position = pos;
     }

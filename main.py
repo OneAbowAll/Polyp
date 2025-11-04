@@ -6,19 +6,16 @@ import numpy as np
 from enum import Enum, IntEnum
 from OpenGL.GL import *
 
-import glm
+from pyglm import glm
 import imgui
 from imgui.integrations.pygame import PygameRenderer
 
 import arcball
 from debug_draw import draw_box, draw_line, draw_rect_xz
-import debug_draw
 import log
 import shader
 import texture
-import trackball
 import metashape_loader
-from shaders import VERTEX_SHADER, FRAGMENT_SHADER
 from renderable import *
 
 class ViewMode(IntEnum):
@@ -288,13 +285,13 @@ def main():
         mask_id = None
     )
     
-    #Calculate chunk matrrix
+    #Calculate chunk matrix
     mat4_np = np.eye(4)
     mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
-    chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
-    chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
-    chunk_matrix = chunk_tra_matrix * chunk_sca_matrix * chunk_rot_matrix
+    chunk_tra_matrix =  glm.translate(glm.vec3(*chunk_transl))
+    chunk_sca_matrix =  glm.scale(glm.vec3(chunk_scal))
+    chunk_matrix : glm.mat4x4 = chunk_tra_matrix * chunk_sca_matrix * chunk_rot_matrix
     
     #Camera
     projection_matrix = glm.perspective(glm.radians(45), W/H,0.0001,10)
@@ -305,27 +302,28 @@ def main():
 
     #Load camera frame
     camera_frame_vao = create_buffers_frame(SHADER_FRAME)
-    center_frame_matrix = chunk_matrix * glm.translate(glm.mat4(1.0), center)
+    center_frame_matrix = chunk_matrix * glm.translate(center)
     #center_frame_matrix = glm.mat4(1.0)
 
     arcBall.set_center(center_frame_matrix * glm.vec3(0))
     arcBall.set_distance(0.01)
 
-    ortho_proj: glm.mat4 = glm.ortho(-0.01099, 0.0129941, -0.014, 0.012, 0.0, 0.02) #ortho.extents
+    ortho_proj: glm.mat4 = glm.ortho(-0.01099, 0.0129941, -0.014, 0.012) #ortho.extents
     
     ortho_center = glm.vec3(0.0020, 0.0067, -0.0402) #? #-ortho.projection.translation
     ortho_view = glm.lookAt(ortho_center + glm.vec3(0, 0, 0.01), ortho_center, glm.vec3(0, 1, 0))
 
     #Calculate all camera matrices
-    camera_matrices : list[glm.mat4] = [glm.mat4] * len(cameras)
+    camera_matrices : list[glm.mat4x4] = [glm.mat4] * len(cameras)
     for i in range(0, len(cameras)):
         camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
 
+    #Import Label map
+    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "labelmap.png"))
 
     #Application settings
-    view_mode = ViewMode.ORTHO #False(0) for arcball camera controll - True(1) for look through sensor mode
+    view_mode = ViewMode.ORTHO
     selected_camera_id = 0
-    selected_camera_id_changed = False
 
     show_origin_frame = True
     show_camera_frames = True
@@ -348,14 +346,14 @@ def main():
             IMGUI_RENDERER.process_event(event)
             
             if event.type == pygame.QUIT:
-                running = False;
+                running = False
             
             if imgui.get_io().want_capture_mouse:
-                continue;
+                continue
 
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_ESCAPE:
-                    running = False;
+                    running = False
 
             # Mouse movement - trackball rotation
             if event.type == pygame.MOUSEMOTION:
@@ -439,16 +437,21 @@ def main():
         #Activate renderable obj's texture
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, rend.texture_id)
+        SHADER_MAIN.set_int("uColorTex", 0)
+
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, label_map)
+        SHADER_MAIN.set_int("uLabelMap", 1)
 
         #Render the actual renderable obj
         glBindVertexArray(rend.vao)
         glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
         glBindVertexArray(0)
     
-        glBindVertexArray(0)
+        glBindTexture(GL_TEXTURE_2D, 0)
         glUseProgram(0)
 
-        #TODO: Make this and above an indipendent and reusable function
+        #TODO: Make this and above an independent and reusable function
         glUseProgram(SHADER_FRAME.program)
         #Set view/proj matrices
         SHADER_FRAME.set_mat4("uProj", projection_matrix)
@@ -479,7 +482,9 @@ def main():
         check_gl_errors()
         #----------------------------------------------
 
+
         #End of frame----------------------------------
+        glActiveTexture(GL_TEXTURE0)
         imgui.render()
         IMGUI_RENDERER.render(imgui.get_draw_data())
 
@@ -487,7 +492,7 @@ def main():
         DELTA_TIME = CLOCK.tick(60) / 1000
         #----------------------------------------------
 
-    return 0;
+    return 0
 
 if __name__ == '__main__':
     try:

@@ -30,3 +30,8 @@ TODOS VERI:
     .
 
     [X] Refactoring di alcune classi, tipo shader per renderle piu' semplici da usare
+
+
+ORTO-COSE:
+    []Cambiare il filtering della texture delle labels.
+    []Creare un modo semplice per passare da cordinate del mondo/modello a quelle texture della orto immagine.
