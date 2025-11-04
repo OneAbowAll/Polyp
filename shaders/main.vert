@@ -9,6 +9,7 @@ uniform int uViewMode;  //0 for arcball camera controll - 1 for look through sen
 
 uniform mat4 uProj; 
 uniform mat4 uView;
+uniform mat4 uModel;
 
 //Sensor settings
 uniform int resolution_width;
@@ -60,15 +61,16 @@ void main(void)
     vPos = aPosition;
     vTexCoord = aTexCoord;
 
-    if(uViewMode == 0)
+    if(uViewMode == 1)
     {
-
-        vec4 pos = uProj*uView*vec4(aPosition, 1.0);
-        gl_Position = pos;
+        float focmm = f / resolution_width;
+        vec3 pos_vs = (uView * uModel * vec4(aPosition, 1.0)).xyz;
+        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.0*focmm), 1.0);
     }
     else
-    {   float focmm = f / resolution_width;
-        vec3 pos_vs = (uView * vec4(aPosition, 1.0)).xyz;
-        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.0*focmm), 1.0);
+    {   
+        
+        vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
+        gl_Position = pos;
     }
 }

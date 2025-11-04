@@ -1,6 +1,4 @@
-from gettext import translation
 import glm
-from networkx import center
 import numpy
 
 
@@ -36,12 +34,12 @@ class ArcballCamera:
 
         angle = glm.acos(glm.min(1.0, glm.dot(P0, P1)))
 
-        rotation_axis = glm.cross(P0, P1)
+        rotation_axis = glm.cross(P1, P0)
         if glm.length(rotation_axis) < 1e-6:
             return
         
         delta_rot = glm.rotate(glm.mat4(1.0), angle, rotation_axis)
-        self.rotation = delta_rot * self.rotation
+        self.rotation = self.rotation * delta_rot
         self.last_point = P1
         
         #Mark viewmatrix as dirty
@@ -71,20 +69,25 @@ class ArcballCamera:
 
         return P
     
-    def set_center(self, center, distance):
+    def set_center(self, center):
         self.center = center
         self.is_dirty = True
 
     def set_distance(self, distance):
-        self.distance = glm.clamp(distance, 0.1, 10)
+        self.distance = glm.clamp(distance, 0.001, 10)
         self.is_dirty = True
     
     def get_view_matrix(self):
         if(not self.is_dirty):
             return self.view_matrix
         
-        translation_matrix = glm.translate(glm.mat4(1.0), self.center)
-        scaling_matrix = glm.scale(glm.mat4(1.0), glm.vec3(self.distance))
-        self.view_matrix = translation_matrix * scaling_matrix * self.rotation * glm.inverse(translation_matrix)
 
+        eye_position = glm.vec3(self.rotation * glm.vec4(0, 0, self.distance, 1))
+        eye_position += self.center
+
+        # Costruiamo la view matrix con lookAt
+        up = glm.vec3(self.rotation * glm.vec4(0, 1, 0, 0))
+        self.view_matrix = glm.lookAt(eye_position, self.center, up)
+
+        self.is_dirty = False
         return self.view_matrix

@@ -1,5 +1,8 @@
-C:/Users/dadod/Downloads/test2
-C:/Users/dadod/Downloads/test2
-C:/Users/dadod/Downloads/test2
-C:/Users/dadod/Downloads/test2/model.ply
-C:/Users/dadod/Downloads/test2/test2.psz
+C:/Users/dadod/Downloads/coloniagiallarec
+C:/Users/dadod/Downloads/coloniagiallarec
+C:/Users/dadod/Downloads/coloniagiallarec
+C:/Users/dadod/Downloads/coloniagiallarec/model1.ply
+C:/Users/dadod/Downloads/coloniagiallarec/test.psz
+
+
+

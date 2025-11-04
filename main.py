@@ -3,6 +3,7 @@ import sys
 import pygame
 import pymeshlab
 import numpy as np
+from enum import Enum, IntEnum
 from OpenGL.GL import *
 
 import glm
@@ -10,6 +11,8 @@ import imgui
 from imgui.integrations.pygame import PygameRenderer
 
 import arcball
+from debug_draw import draw_box, draw_line, draw_rect_xz
+import debug_draw
 import log
 import shader
 import texture
@@ -18,7 +21,12 @@ import metashape_loader
 from shaders import VERTEX_SHADER, FRAGMENT_SHADER
 from renderable import *
 
-def create_buffers_frame(shader):
+class ViewMode(IntEnum):
+    FREE = 0
+    CAMERA = 1
+    ORTHO = 2
+
+def create_buffers_frame(frame_shader):
     """Create buffer for XYZ lines. Returns generated VAO's id."""
 
     # Create a new VAO (Vertex Array Object) and bind it
@@ -30,7 +38,7 @@ def create_buffers_frame(shader):
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
     
     # Get the position of the 'position' in parameter of our shader and bind it.
-    position = glGetAttribLocation(shader.program, 'aPosition')
+    position = glGetAttribLocation(frame_shader.program, 'aPosition')
     glEnableVertexAttribArray(position)
     
     # Describe the position data layout in the buffer
@@ -47,7 +55,7 @@ def create_buffers_frame(shader):
     glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
     
     # Get the position of the 'position' in parameter of our shader and bind it.
-    position = glGetAttribLocation(shader.program, 'aColor')
+    position = glGetAttribLocation(frame_shader.program, 'aColor')
     glEnableVertexAttribArray(position)
     
     # Describe the position data layout in the buffer
@@ -67,7 +75,7 @@ def create_buffers_frame(shader):
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
 
-def create_mesh_buffers(verts, wed_tcoord, inds, shader):
+def create_mesh_buffers(verts, wed_tcoord, inds, mesh_shader):
     """
         Mesh buffer creation.
         Creates VAO and VBOs for the mesh
@@ -75,7 +83,7 @@ def create_mesh_buffers(verts, wed_tcoord, inds, shader):
         - verts: vertex positions
         - wed_tcoord: texture coordinates
         - inds: indices
-        - shader: shader to use
+        - mesh_shader: shader to use
     
     Returns VAO
     """
@@ -102,7 +110,7 @@ def create_mesh_buffers(verts, wed_tcoord, inds, shader):
     # Vertex positions
     vertex_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
-    position = glGetAttribLocation(shader.program, 'aPosition')
+    position = glGetAttribLocation(mesh_shader.program, 'aPosition')
     glEnableVertexAttribArray(position)
     glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, None)
     glBufferData(GL_ARRAY_BUFFER, vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
@@ -110,14 +118,15 @@ def create_mesh_buffers(verts, wed_tcoord, inds, shader):
     # Texture coordinates
     tcoord_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
-    position = glGetAttribLocation(shader.program, 'aTexCoord')
-    glEnableVertexAttribArray(position)
-    glVertexAttribPointer(position, 2, GL_FLOAT, False, 0, None)
-    glBufferData(GL_ARRAY_BUFFER, tcoords.nbytes, tcoords, GL_STATIC_DRAW)
+    position = glGetAttribLocation(mesh_shader.program, 'aTexCoord')
+    if not position == -1:
+        glEnableVertexAttribArray(position)
+        glVertexAttribPointer(position, 2, GL_FLOAT, False, 0, None)
+        glBufferData(GL_ARRAY_BUFFER, tcoords.nbytes, tcoords, GL_STATIC_DRAW)
     
     # Unbind
     glBindVertexArray(0)
-    glDisableVertexAttribArray(position)
+    #glDisableVertexAttribArray(position)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     
     return vertex_array_object
@@ -154,7 +163,12 @@ def load_mesh(filename):
         texture_name = os.path.join(os.path.dirname(filename), 
                                    os.path.basename(texture_name))
         texture_id, w, h = texture.load_texture(texture_name)
-    
+    else:
+        texture_name = os.path.join(os.path.dirname(filename), 
+                                   os.path.basename('model1.tif'))
+        texture_id, w, h = texture.load_texture(texture_name)
+
+        
     # Compute bounding box
     bbox_min = vertices.min(axis=0)
     bbox_max = vertices.max(axis=0)
@@ -179,7 +193,7 @@ def load_filepaths():
     """
     main_path = imgs_path = mesh_name = metashape_file = ""
     
-    if(len(sys.argv) == 4):
+    if len(sys.argv) == 4:
         main_path = sys.argv[1]
         imgs_path = sys.argv[2]
         mesh_name = sys.argv[3]
@@ -252,7 +266,7 @@ def main():
     Chunk Rotation:\n\
         {chunk_rot}\n\
     ,\n\
-    Chunk Rotation:\n\
+    Chunk Translation:\n\
         {chunk_transl}\n\
     ,\n\
     Chunk Scale:\n\
@@ -274,18 +288,6 @@ def main():
         mask_id = None
     )
     
-    #Camera
-    projection_matrix = glm.perspective(glm.radians(45), 1.5,0.1,10)
-
-    arcBall = arcball.ArcballCamera(W, H)
-    center = (bbox_min+bbox_max)/2.0
-    center = glm.vec3(center[0], center[1], center[2])
-    arcBall.set_center(center, 1)
-
-    #Load camera frame
-    camera_frame_vao = create_buffers_frame(SHADER_FRAME)
-    center_frame_matrix = glm.translate(glm.mat4(1.0), center) * glm.scale(glm.mat4(1.0), glm.vec3(0.125))
-
     #Calculate chunk matrrix
     mat4_np = np.eye(4)
     mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
@@ -293,6 +295,26 @@ def main():
     chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
     chunk_matrix = chunk_tra_matrix * chunk_sca_matrix * chunk_rot_matrix
+    
+    #Camera
+    projection_matrix = glm.perspective(glm.radians(45), W/H,0.0001,10)
+
+    arcBall = arcball.ArcballCamera(W, H)
+    center = (bbox_min+bbox_max)/2.0
+    center = glm.vec3(center[0], center[1], center[2])
+
+    #Load camera frame
+    camera_frame_vao = create_buffers_frame(SHADER_FRAME)
+    center_frame_matrix = chunk_matrix * glm.translate(glm.mat4(1.0), center)
+    #center_frame_matrix = glm.mat4(1.0)
+
+    arcBall.set_center(center_frame_matrix * glm.vec3(0))
+    arcBall.set_distance(0.01)
+
+    ortho_proj: glm.mat4 = glm.ortho(-0.01099, 0.0129941, -0.014, 0.012, 0.0, 0.02) #ortho.extents
+    
+    ortho_center = glm.vec3(0.0020, 0.0067, -0.0402) #? #-ortho.projection.translation
+    ortho_view = glm.lookAt(ortho_center + glm.vec3(0, 0, 0.01), ortho_center, glm.vec3(0, 1, 0))
 
     #Calculate all camera matrices
     camera_matrices : list[glm.mat4] = [glm.mat4] * len(cameras)
@@ -301,12 +323,13 @@ def main():
 
 
     #Application settings
-    view_mode = False #False(0) for arcball camera controll - True(1) for look through sensor mode
+    view_mode = ViewMode.ORTHO #False(0) for arcball camera controll - True(1) for look through sensor mode
     selected_camera_id = 0
     selected_camera_id_changed = False
 
     show_origin_frame = True
     show_camera_frames = True
+    show_debug = True
     
     #Set first sensor
     glUseProgram(SHADER_MAIN.program)
@@ -318,7 +341,7 @@ def main():
     glEnable(GL_DEPTH_TEST)
     running = True
     while running:
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
 
         #Handle PyGames&ImGui events ------------------
         for event in pygame.event.get():
@@ -337,15 +360,15 @@ def main():
             # Mouse movement - trackball rotation
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
-                if(not view_mode):
+                if view_mode == ViewMode.FREE:
                     arcBall.mouse_move(mouseX, mouseY)
                 #tb.mouse_move(projection_matrix, view_matrix, mouseX, mouseY)
             
             # Mouse wheel - zoom
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
-                if(not view_mode):
-                    arcBall.set_distance(arcBall.distance + yoffset * 5 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
+                if view_mode == ViewMode.FREE:
+                    arcBall.set_distance(arcBall.distance - yoffset * 2 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
@@ -353,13 +376,13 @@ def main():
                 if event.button == 1:  # Not mouse wheel
                     mouseX, mouseY = event.pos
                     
-                    if(not view_mode):
+                    if view_mode == ViewMode.FREE:
                         arcBall.mouse_pressed(mouseX, mouseY)
                     #tb.mouse_press(projection_matrix, view_matrix, mouseX, mouseY)
             
             if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:  # Left mouse button
-                    if(not view_mode):
+                    if view_mode == ViewMode.FREE:
                         arcBall.mouse_release()
                     #tb.mouse_release()
         #----------------------------------------------
@@ -368,11 +391,12 @@ def main():
         imgui.new_frame()
         if imgui.begin_main_menu_bar().opened:
             if imgui.begin_menu('Actions', True).opened:
-                view_mode_changed, view_mode = imgui.checkbox("View through cameras", view_mode)
+                view_mode_changed, view_mode_value = imgui.combo("View Mode", view_mode, ["Free cam", "Sensors", "Ortho"])
+                view_mode = view_mode_value
                 selected_camera_id_changed, selected_camera_id = imgui.input_int("Camera ID", selected_camera_id, 1, 100)
                 
-                if view_mode_changed:
-                    show_camera_frames = not view_mode  #Se vai in modalita' metaashape-camera nascondi in automatico i camera frames
+                if view_mode_changed and view_mode == ViewMode.CAMERA:
+                    show_camera_frames = False  #Se vai in modalita' metaashape-camera nascondi in automatico i camera frames
 
                 if selected_camera_id_changed:
                     selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
@@ -380,11 +404,11 @@ def main():
                     glUseProgram(SHADER_MAIN.program)
                     set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
                     glUseProgram(0)
-                    
 
                 imgui.separator()
                 _, show_origin_frame = imgui.checkbox("Show origin frame", show_origin_frame)
                 _, show_camera_frames = imgui.checkbox("Show camera frames", show_camera_frames)
+                _, show_debug = imgui.checkbox("Show debug draw", show_debug)
                 imgui.end_menu()
 
             imgui.end_main_menu_bar()
@@ -395,16 +419,22 @@ def main():
         glUseProgram(SHADER_MAIN.program)
         SHADER_MAIN.set_int("uViewMode", view_mode)
 
-        #Set view/proj matrices
-        SHADER_MAIN.set_mat4("uProj", projection_matrix)
+        final_view : glm.mat4 = glm.mat4(1.0)
+        match view_mode:
+            case ViewMode.FREE:
+                SHADER_MAIN.set_mat4("uProj", projection_matrix)
+                final_view = arcBall.get_view_matrix()
+            
+            case ViewMode.CAMERA:
+                final_view = glm.inverse(camera_matrices[selected_camera_id])
 
-        final_view : glm.mat4
-        if(view_mode):
-            final_view = glm.inverse(camera_matrices[selected_camera_id])
-        else:
-            final_view = arcBall.get_view_matrix()
+            case ViewMode.ORTHO:
+                SHADER_MAIN.set_mat4("uProj", ortho_proj)
+                final_view = ortho_view
+
         
         SHADER_MAIN.set_mat4("uView", final_view)
+        SHADER_MAIN.set_mat4("uModel", chunk_matrix)
 
         #Activate renderable obj's texture
         glActiveTexture(GL_TEXTURE0)
@@ -423,17 +453,20 @@ def main():
         #Set view/proj matrices
         SHADER_FRAME.set_mat4("uProj", projection_matrix)
         SHADER_FRAME.set_mat4("uView", final_view)
-        SHADER_FRAME.set_mat4("uModel", center_frame_matrix)
-        
 
+        if show_debug:
+            SHADER_FRAME.set_mat4("uModel", glm.inverse(ortho_view) * glm.inverse(ortho_proj)) # type: ignore
+            draw_box(glm.vec3(0), glm.vec3(2))
+
+        SHADER_FRAME.set_mat4("uModel", center_frame_matrix)
         glBindVertexArray(camera_frame_vao)
 
         #Draw origin frame
-        if(show_origin_frame):
+        if show_origin_frame:
             glDrawArrays(GL_LINES, 0, 6)
 
         #Draw all the camera's frame
-        if(show_camera_frames):
+        if show_camera_frames:
             for i in range(0,len(cameras)):
                 SHADER_FRAME.set_mat4("uModel", camera_matrices[i])
                 glDrawArrays(GL_LINES, 0, 6)
@@ -453,11 +486,6 @@ def main():
         pygame.display.flip()
         DELTA_TIME = CLOCK.tick(60) / 1000
         #----------------------------------------------
-
-    #Stuff to do before close
-    log.print_debug(f"Test {W}:{H}")
-    log.print_warning(f"Test {W}:{H}")
-    log.print_info(f"Test {W}:{H}")
 
     return 0;
 
