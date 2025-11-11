@@ -33,5 +33,5 @@ TODOS VERI:
 
 
 ORTO-COSE:
-    []Cambiare il filtering della texture delle labels.
+    []Cambiare il sampling della texture delle labels.
     []Creare un modo semplice per passare da cordinate del mondo/modello a quelle texture della orto immagine.

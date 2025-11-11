@@ -159,11 +159,11 @@ def load_mesh(filename):
         texture_name = next(iter(texture_dict.keys()))
         texture_name = os.path.join(os.path.dirname(filename), 
                                    os.path.basename(texture_name))
-        texture_id, w, h = texture.load_texture(texture_name)
+        texture_id, w, h = texture.load_texture(texture_name, GL_LINEAR)
     else:
         texture_name = os.path.join(os.path.dirname(filename), 
                                    os.path.basename('model1.tif'))
-        texture_id, w, h = texture.load_texture(texture_name)
+        texture_id, w, h = texture.load_texture(texture_name, GL_LINEAR)
 
         
     # Compute bounding box
@@ -224,7 +224,6 @@ def set_sensor(shader: shader.Shader, sensor):
     shader.set_float("k3", sensor.calibration["k3"])
     shader.set_float("p1", sensor.calibration["p1"])
     shader.set_float("p2", sensor.calibration["p2"])
-
 
 def main():
     glm.silence(4)
@@ -308,9 +307,9 @@ def main():
     arcBall.set_center(center_frame_matrix * glm.vec3(0))
     arcBall.set_distance(0.01)
 
-    ortho_proj: glm.mat4 = glm.ortho(-0.01099, 0.0129941, -0.014, 0.012) #ortho.extents
+    ortho_proj: glm.mat4 = glm.ortho(-0.010999999999999999, 0.012994140625000004, -0.014, 0.012000000000000002) #ortho.extents
     
-    ortho_center = glm.vec3(0.0020, 0.0067, -0.0402) #? #-ortho.projection.translation
+    ortho_center = glm.vec3(0.0020836949428667791 , 0.0067023633872132695 , -0.040282785852097491) #? #-ortho.projection.translation
     ortho_view = glm.lookAt(ortho_center + glm.vec3(0, 0, 0.01), ortho_center, glm.vec3(0, 1, 0))
 
     #Calculate all camera matrices
@@ -319,7 +318,7 @@ def main():
         camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
 
     #Import Label map
-    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "labelmap.png"))
+    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "labelmap.png"), GL_NEAREST)
 
     #Application settings
     view_mode = ViewMode.ORTHO
@@ -332,6 +331,9 @@ def main():
     #Set first sensor
     glUseProgram(SHADER_MAIN.program)
     set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
+
+    SHADER_MAIN.set_mat4("uOrthoProj",  ortho_proj)
+    SHADER_MAIN.set_mat4("uOrthoView",  ortho_view)
     glUseProgram(0)
     
     #OpenGl settings
@@ -366,7 +368,7 @@ def main():
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
                 if view_mode == ViewMode.FREE:
-                    arcBall.set_distance(arcBall.distance - yoffset * 2 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
+                    arcBall.set_distance(arcBall.distance - yoffset * 0.5 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button

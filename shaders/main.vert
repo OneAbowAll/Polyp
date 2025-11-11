@@ -3,6 +3,7 @@ in vec3 aPosition;
 in vec2 aTexCoord;
 
 out vec3 vPos;
+out vec3 vOrthoPos;
 out vec2 vTexCoord;
 
 uniform int uViewMode;  //0 for arcball camera controll - 1 for look through sensor mode
@@ -10,6 +11,9 @@ uniform int uViewMode;  //0 for arcball camera controll - 1 for look through sen
 uniform mat4 uProj; 
 uniform mat4 uView;
 uniform mat4 uModel;
+
+uniform mat4 uOrthoProj;
+uniform mat4 uOrthoView;
 
 //Sensor settings
 uniform int resolution_width;
@@ -59,6 +63,7 @@ vec2 xyz_to_uv(vec3 p){
 void main(void)
 {
     vPos = aPosition;
+    vOrthoPos = (uOrthoProj*uOrthoView*uModel*vec4(aPosition, 1.0)).xyz;
     vTexCoord = aTexCoord;
 
     if(uViewMode == 1)
@@ -69,9 +74,6 @@ void main(void)
     }
     else
     {
-        if(uViewMode == 2)
-            vPos = (uProj*uView*uModel*vec4(aPosition, 1.0)).xyz;
-
         vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
         gl_Position = pos;
     }

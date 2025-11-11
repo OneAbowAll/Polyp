@@ -2,6 +2,7 @@
 layout(location = 0) out vec4 color;
 
 in vec3 vPos;
+in vec3 vOrthoPos;
 in vec2 vTexCoord;
 
 uniform sampler2D uColorTex;
@@ -12,11 +13,11 @@ void main()
     vTexCoord;
     uColorTex;
 
-    vec2 orthoPos = (vPos.xy + vec2(1, 1))/2;
+    vec2 orthoPos = (vOrthoPos.xy + vec2(1, 1))/2;
 
     vec4 label = vec4(texture(uLabelMap, orthoPos.xy).rgb, 1);
     if(length(label.xyz) > 0.0)
-        color = label;
+        color = vec4(texture(uColorTex, vTexCoord.xy).rgb + label.rgb, 1);
     else
         color = vec4(texture(uColorTex, vTexCoord.xy).rgb, 1);
     /*

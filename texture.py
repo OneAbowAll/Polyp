@@ -2,7 +2,7 @@ import OpenGL.GL as gl
 from PIL import Image
 import numpy as np
 
-def load_texture(image_path):
+def load_texture(image_path, filterType):
     """
     Load a JPEG image and set it as a texture in PyOpenGL.
     
@@ -31,8 +31,8 @@ def load_texture(image_path):
     # Set texture parameters
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT)
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, filterType)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, filterType)
 
     # Specify the 2D texture
     gl.glTexImage2D(
