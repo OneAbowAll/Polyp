@@ -1,5 +1,7 @@
 import os
 import sys
+
+from PIL import Image, ImageOps
 import pygame
 import pymeshlab
 import numpy as np
@@ -322,6 +324,7 @@ def main():
 
     #Application settings
     view_mode = ViewMode.ORTHO
+    render_mode = False
     selected_camera_id = 0
 
     show_origin_frame = True
@@ -342,7 +345,6 @@ def main():
     running = True
     while running:
         glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
-
         #Handle PyGames&ImGui events ------------------
         for event in pygame.event.get():
             IMGUI_RENDERER.process_event(event)
@@ -405,19 +407,57 @@ def main():
                     set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
                     glUseProgram(0)
 
+                if imgui.button("Render pseudo-labels"):
+                    glUseProgram(SHADER_MAIN.program)
+                    SHADER_MAIN.set_int("uRenderMode", 0)
+                    SHADER_MAIN.set_int("uViewMode", ViewMode.CAMERA)
+
+                    glActiveTexture(GL_TEXTURE0)
+                    glBindTexture(GL_TEXTURE_2D, rend.texture_id)
+                    SHADER_MAIN.set_int("uColorTex", 0)
+
+                    glActiveTexture(GL_TEXTURE1)
+                    glBindTexture(GL_TEXTURE_2D, label_map)
+                    SHADER_MAIN.set_int("uLabelMap", 1)
+
+                    SHADER_MAIN.set_mat4("uModel", chunk_matrix)
+                    for i in range(0, len(cameras)):
+                        glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+                        SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[i]))
+                        set_sensor(SHADER_MAIN, sensors[cameras[i].sensor_id])
+
+                        glBindVertexArray(rend.vao)
+                        glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
+                        glBindVertexArray(0)
+
+                        frameBytes = glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, None)
+                        result = Image.frombuffer("RGB", (W, H), frameBytes, "raw", "RGB", 0, 1)
+                        result = ImageOps.flip(result)
+                        result.save(os.path.join(MAIN_PATH, "output", "PseudoLabel_" + cameras[i].label + ".png"))
+
+
+                    glUseProgram(0)
+
+                if imgui.button("Test screenshot"):
+                    frameBytes = glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, None)
+                    result = Image.frombuffer("RGB", (W, H), frameBytes, "raw", "RGB", 0, 1)
+                    result = ImageOps.flip(result)
+                    result.save(os.path.join(MAIN_PATH, "output.png"))
+
                 imgui.separator()
+                _, render_mode = imgui.checkbox("Show only labelmap", render_mode)
                 _, show_origin_frame = imgui.checkbox("Show origin frame", show_origin_frame)
                 _, show_camera_frames = imgui.checkbox("Show camera frames", show_camera_frames)
                 _, show_debug = imgui.checkbox("Show debug draw", show_debug)
                 imgui.end_menu()
 
             imgui.end_main_menu_bar()
-
         #----------------------------------------------
 
         #Rendering ------------------------------------
         glUseProgram(SHADER_MAIN.program)
         SHADER_MAIN.set_int("uViewMode", view_mode)
+        SHADER_MAIN.set_int("uRenderMode", (0 if render_mode else 1))
 
         final_view : glm.mat4 = glm.mat4(1.0)
         match view_mode:
@@ -445,15 +485,15 @@ def main():
         glBindTexture(GL_TEXTURE_2D, label_map)
         SHADER_MAIN.set_int("uLabelMap", 1)
 
-        #Render the actual renderable obj
+        #Render the actual renderable obj-------------
         glBindVertexArray(rend.vao)
         glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
         glBindVertexArray(0)
-    
+
         glBindTexture(GL_TEXTURE_2D, 0)
         glUseProgram(0)
 
-        #TODO: Make this and above an independent and reusable function
+        #Render debug/handles objects-----------------
         glUseProgram(SHADER_FRAME.program)
         #Set view/proj matrices
         SHADER_FRAME.set_mat4("uProj", projection_matrix)

@@ -33,5 +33,9 @@ TODOS VERI:
 
 
 ORTO-COSE:
-    []Cambiare il sampling della texture delle labels.
-    []Creare un modo semplice per passare da cordinate del mondo/modello a quelle texture della orto immagine.
+    [X]Cambiare il sampling della texture delle labels.
+    [X]Creare un modo semplice per passare da cordinate del mondo/modello a quelle texture della orto immagine.
+
+
+PSEUDOLABELS:
+    []Ottieni lista
