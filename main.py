@@ -20,6 +20,11 @@ import texture
 import metashape_loader
 from renderable import *
 
+class RenderMode(IntEnum):
+    LABEL_ONLY = 0
+    MIXED = 1
+    TEXTURE_ONLY = 2
+
 class ViewMode(IntEnum):
     FREE = 0
     CAMERA = 1
@@ -324,7 +329,7 @@ def main():
 
     #Application settings
     view_mode = ViewMode.ORTHO
-    render_mode = False
+    render_mode = RenderMode.TEXTURE_ONLY
     selected_camera_id = 0
 
     show_origin_frame = True
@@ -343,6 +348,7 @@ def main():
     glClearColor(0, 0, 0, 1)
     glEnable(GL_DEPTH_TEST)
     running = True
+
     while running:
         glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
         #Handle PyGames&ImGui events ------------------
@@ -395,6 +401,7 @@ def main():
             if imgui.begin_menu('Actions', True).opened:
                 view_mode_changed, view_mode_value = imgui.combo("View Mode", view_mode, ["Free cam", "Sensors", "Ortho"])
                 view_mode = view_mode_value
+                _, render_mode = imgui.combo("Render Mode", render_mode, ["Label only", "Mixed", "Texture only"])
                 selected_camera_id_changed, selected_camera_id = imgui.input_int("Camera ID", selected_camera_id, 1, 100)
                 
                 if view_mode_changed and view_mode == ViewMode.CAMERA:
@@ -409,7 +416,7 @@ def main():
 
                 if imgui.button("Render pseudo-labels"):
                     glUseProgram(SHADER_MAIN.program)
-                    SHADER_MAIN.set_int("uRenderMode", 0)
+                    SHADER_MAIN.set_int("uRenderMode", RenderMode.LABEL_ONLY)
                     SHADER_MAIN.set_int("uViewMode", ViewMode.CAMERA)
 
                     glActiveTexture(GL_TEXTURE0)
@@ -421,6 +428,9 @@ def main():
                     SHADER_MAIN.set_int("uLabelMap", 1)
 
                     SHADER_MAIN.set_mat4("uModel", chunk_matrix)
+
+                    glViewport(0, 0, 4000, 3000)
+                    pygame.display.set_mode((4000, 3000), pygame.OPENGL|pygame.DOUBLEBUF)
                     for i in range(0, len(cameras)):
                         glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
                         SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[i]))
@@ -430,22 +440,17 @@ def main():
                         glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
                         glBindVertexArray(0)
 
-                        frameBytes = glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, None)
-                        result = Image.frombuffer("RGB", (W, H), frameBytes, "raw", "RGB", 0, 1)
+                        frameBytes = glReadPixels(0, 0, 4000, 3000, GL_RGB, GL_UNSIGNED_BYTE, None)
+                        result = Image.frombuffer("RGB", (4000, 3000), frameBytes, "raw", "RGB", 0, 1)
                         result = ImageOps.flip(result)
                         result.save(os.path.join(MAIN_PATH, "output", "PseudoLabel_" + cameras[i].label + ".png"))
 
 
                     glUseProgram(0)
-
-                if imgui.button("Test screenshot"):
-                    frameBytes = glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, None)
-                    result = Image.frombuffer("RGB", (W, H), frameBytes, "raw", "RGB", 0, 1)
-                    result = ImageOps.flip(result)
-                    result.save(os.path.join(MAIN_PATH, "output.png"))
+                    glViewport(0, 0, W, H)
+                    pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
 
                 imgui.separator()
-                _, render_mode = imgui.checkbox("Show only labelmap", render_mode)
                 _, show_origin_frame = imgui.checkbox("Show origin frame", show_origin_frame)
                 _, show_camera_frames = imgui.checkbox("Show camera frames", show_camera_frames)
                 _, show_debug = imgui.checkbox("Show debug draw", show_debug)
@@ -457,7 +462,7 @@ def main():
         #Rendering ------------------------------------
         glUseProgram(SHADER_MAIN.program)
         SHADER_MAIN.set_int("uViewMode", view_mode)
-        SHADER_MAIN.set_int("uRenderMode", (0 if render_mode else 1))
+        SHADER_MAIN.set_int("uRenderMode", render_mode)
 
         final_view : glm.mat4 = glm.mat4(1.0)
         match view_mode:

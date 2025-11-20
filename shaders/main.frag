@@ -26,12 +26,16 @@ void main()
         color = label;
     }
     //Rendereizza la labelmap sopra alla texture del modello (uso l'addizione per visualizzare meglio la texture sotto)
-    else
+    else if(uRenderMode == 1)
     {
 
-    if(length(label.xyz) > 0.0)
-        color = vec4(texture(uColorTex, vTexCoord.xy).rgb + label.rgb, 1);
+        if(length(label.xyz) > 0.0)
+            color = vec4(texture(uColorTex, vTexCoord.xy).rgb + label.rgb, 1);
+        else
+            color = vec4(texture(uColorTex, vTexCoord.xy).rgb, 1);
+    }
     else
+    {
         color = vec4(texture(uColorTex, vTexCoord.xy).rgb, 1);
     }
 
