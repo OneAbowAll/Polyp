@@ -33,6 +33,8 @@ uniform float k2;
 uniform float k3;
 uniform float p1;
 uniform float p2;
+uniform float b1;
+uniform float b2;
 uniform float near;
 uniform float far;
 
@@ -51,7 +53,7 @@ vec2 xyz_to_uv(vec3 p){
     float xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
     float yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
 
-    float u = resolution_width*0.5+cx+xp*f; //+xp*b1+yp*b2
+    float u = resolution_width*0.5+cx+xp*f + xp*b1+yp*b2;
     float v = resolution_height*0.5+cy+yp*f;
 
     u /= resolution_width;

@@ -1,8 +1,8 @@
-C:/Users/dadod/Downloads/coloniagiallarec
-C:/Users/dadod/Downloads/coloniagiallarec
-C:/Users/dadod/Downloads/coloniagiallarec
-C:/Users/dadod/Downloads/coloniagiallarec/model1.ply
-C:/Users/dadod/Downloads/coloniagiallarec/test.psz
+S:/2022-01-OCDA-FL1S-P1-CROP
+S:/2022-01-OCDA-FL1S-P1-CROP
+S:/2022-01-OCDA-FL1S-P1-CROP
+S:/2022-01-OCDA-FL1S-P1-CROP/model.ply
+S:/2022-01-OCDA-FL1S-P1-CROP/2022-01-OCDA-FL1S-P1-CROP.psz
 
 
 

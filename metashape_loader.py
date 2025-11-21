@@ -48,6 +48,8 @@ class Sensor:
             self.calibration["k3"],  # Radial distortion k3
             self.calibration["p1"],  # Tangential distortion p1
             self.calibration["p2"],  # Tangential distortion p2
+            self.calibration["b1"],  # ??
+            self.calibration["b2"],  # ??
         ]
         
         # Flatten the covariance coefficients (assuming there are 24 values)
@@ -56,9 +58,9 @@ class Sensor:
         return np.array(ret_array, dtype=np.float32)
     
     def __str__(self):
-        return f"Sensor(id={self.id}, label={self.label}, type={self.type}, resolution={self.resolution}, " \
-               f"properties={self.properties}, bands={self.bands}, data_type={self.data_type}, " \
-               f"calibration={self.calibration}, covariance={self.covariance}, meta={self.meta})"
+        return f"Sensor(id={self.id},\n label={self.label},\n type={self.type},\n resolution={self.resolution},\n " \
+               f"properties={self.properties},\n bands={self.bands},\n data_type={self.data_type},\n " \
+               f"calibration={self.calibration},\n covariance={self.covariance},\n meta={self.meta})"
 
 def load_sensors_from_xml(file_path):
     with zipfile.ZipFile(file_path, 'r') as zip_ref:
@@ -117,7 +119,7 @@ def load_sensors_from_xml(file_path):
                 sensor.calibration["resolution"]["width"] = int(resolution_elem.get("width"))
                 sensor.calibration["resolution"]["height"] = int(resolution_elem.get("height"))
             
-            for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2"]:
+            for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2", "b1", "b2"]:
                 field_elem = calibration_elem.find(field)
                 if field_elem is not None:
                     sensor.calibration[field] = float(field_elem.text)

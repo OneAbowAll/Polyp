@@ -1,6 +1,7 @@
 import os
 import sys
 
+import PIL.Image
 from PIL import Image, ImageOps
 import pygame
 import pymeshlab
@@ -231,9 +232,12 @@ def set_sensor(shader: shader.Shader, sensor):
     shader.set_float("k3", sensor.calibration["k3"])
     shader.set_float("p1", sensor.calibration["p1"])
     shader.set_float("p2", sensor.calibration["p2"])
+    shader.set_float("b1", sensor.calibration["b1"])
+    shader.set_float("b2", sensor.calibration["b2"])
 
 def main():
     glm.silence(4)
+    PIL.Image.MAX_IMAGE_PIXELS = 181159576
 
     #Window context variables
     W, H = 1200, 800
@@ -260,6 +264,11 @@ def main():
 
     #Load Sensors & Cameras
     sensors = metashape_loader.load_sensors_from_xml( os.path.join(MAIN_PATH, METASHAPE_FILE) )
+    log.print_info(f"Loaded {len(sensors)} sensors.\n")
+    for i in range(0, len(sensors)):
+        log.print_info(f"[{i}] => {{ \n")
+        log.print_info(f"{sensors[i]}\n")
+        log.print_info(f"}}\n")
     
     cameras, chunk_rot, chunk_transl, chunk_scal = metashape_loader.load_cameras_from_xml( os.path.join(MAIN_PATH, METASHAPE_FILE) )
     chunk_rot = np.array(chunk_rot)
@@ -300,7 +309,7 @@ def main():
     chunk_matrix : glm.mat4x4 = chunk_tra_matrix * chunk_sca_matrix * chunk_rot_matrix
     
     #Camera
-    projection_matrix = glm.perspective(glm.radians(45), W/H,0.0001,10)
+    projection_matrix = glm.perspective(glm.radians(45), W/H,0.0001,100)
 
     arcBall = arcball.ArcballCamera(W, H)
     center = (bbox_min+bbox_max)/2.0
@@ -311,13 +320,13 @@ def main():
     center_frame_matrix = chunk_matrix * glm.translate(center)
     #center_frame_matrix = glm.mat4(1.0)
 
-    arcBall.set_center(center_frame_matrix * glm.vec3(0))
-    arcBall.set_distance(0.01)
+    arcBall.set_center(center)
+    arcBall.set_distance(1)
 
-    ortho_proj: glm.mat4 = glm.ortho(-0.010999999999999999, 0.012994140625000004, -0.014, 0.012000000000000002) #ortho.extents
+    ortho_proj: glm.mat4 = glm.ortho(-2.7859610141394064, 2.8135035058605933, -2.365373768699055, 2.3856638113009452, 0.01, 10) #ortho.extents
     
-    ortho_center = glm.vec3(0.0020836949428667791 , 0.0067023633872132695 , -0.040282785852097491) #? #-ortho.projection.translation
-    ortho_view = glm.lookAt(ortho_center + glm.vec3(0, 0, 0.01), ortho_center, glm.vec3(0, 1, 0))
+    ortho_center = glm.vec3(5.0721218747120318  , 0.3702069405071875 , -7.9174685381193006 ) #? #ortho.projection.translation
+    ortho_view = glm.lookAt(ortho_center + glm.vec3(0, 0, 1), ortho_center, glm.vec3(0, 1, 0))
 
     #Calculate all camera matrices
     camera_matrices : list[glm.mat4x4] = [glm.mat4] * len(cameras)
@@ -325,7 +334,7 @@ def main():
         camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
 
     #Import Label map
-    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "labelmap.png"), GL_NEAREST)
+    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST)
 
     #Application settings
     view_mode = ViewMode.ORTHO
@@ -376,7 +385,7 @@ def main():
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
                 if view_mode == ViewMode.FREE:
-                    arcBall.set_distance(arcBall.distance - yoffset * 0.5 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
+                    arcBall.set_distance(arcBall.distance - yoffset  * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
@@ -454,6 +463,11 @@ def main():
                 _, show_origin_frame = imgui.checkbox("Show origin frame", show_origin_frame)
                 _, show_camera_frames = imgui.checkbox("Show camera frames", show_camera_frames)
                 _, show_debug = imgui.checkbox("Show debug draw", show_debug)
+
+                imgui.separator()
+                imgui.text("- Info --------------------")
+                imgui.text(f"Current camera-id: {cameras[selected_camera_id].id}")
+                imgui.text(f"Current img name: {cameras[selected_camera_id].label}")
                 imgui.end_menu()
 
             imgui.end_main_menu_bar()
@@ -479,7 +493,7 @@ def main():
 
         
         SHADER_MAIN.set_mat4("uView", final_view)
-        SHADER_MAIN.set_mat4("uModel", chunk_matrix)
+        SHADER_MAIN.set_mat4("uModel", glm.mat4(1.0))
 
         #Activate renderable obj's texture
         glActiveTexture(GL_TEXTURE0)
