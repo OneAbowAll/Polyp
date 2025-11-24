@@ -1,4 +1,5 @@
 #version 430 core
+
 in vec3 aPosition;
 in vec2 aTexCoord;
 
@@ -47,13 +48,13 @@ vec2 xyz_to_uv(vec3 p){
     float r6 = r4*r2;
     float r8 = r6*r2;
 
-    float A = (1.0+k1*r2+k2*r4+k3*r6  /*+k4*r8*/ ); 
+    float A = (1.0+k1*r2+k2*r4+k3*r6  /*+k4*r8*/ );
     float B = (1.0 /* +p3*r2+p4*r4 */ );
 
     float xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
     float yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
 
-    float u = resolution_width*0.5+cx+xp*f + xp*b1+yp*b2;
+    float u = resolution_width*0.5+cx+xp*f; /*+ xp*b1+yp*b2;*/
     float v = resolution_height*0.5+cy+yp*f;
 
     u /= resolution_width;
@@ -65,7 +66,7 @@ vec2 xyz_to_uv(vec3 p){
 void main(void)
 {
     vPos = aPosition;
-    vOrthoPos = (uOrthoProj*uOrthoView*uModel*vec4(aPosition, 1.0)).xyz;
+    vOrthoPos = (uOrthoProj * uOrthoView * uModel*vec4(aPosition, 1.0)).xyz;
     vTexCoord = aTexCoord;
 
     if(uViewMode == 1)
@@ -73,10 +74,14 @@ void main(void)
         float focmm = f / resolution_width;
         vec3 pos_vs = (uView * uModel * vec4(aPosition, 1.0)).xyz;
         gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.0*focmm), 1.0);
+
+        //vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
+        //gl_Position = pos;
+
     }
     else
     {
         vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
         gl_Position = pos;
     }
-}
+    }
