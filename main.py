@@ -14,11 +14,13 @@ import imgui
 from imgui.integrations.pygame import PygameRenderer
 
 import arcball
+import debug_draw
 from debug_draw import draw_box, draw_line, draw_rect_xz
 import log
 import shader
 import texture
 import metashape_loader
+from fbo import Fbo
 from renderable import *
 
 class RenderMode(IntEnum):
@@ -80,6 +82,33 @@ def create_buffers_frame(frame_shader):
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
 
+def create_quad_buffer():
+    vertices = [ 1.0, -1.0, 0.0,
+                -1.0, -1.0, 0.0,
+                -1.0,  1.0, 0.0,
+
+                 1.0,  1.0, 0.0,
+                 1.0, -1.0, 0.0,
+                -1.0,  1.0, 0.0]
+
+    buffer = glGenVertexArrays(1)
+    glBindVertexArray(buffer)
+
+    vertex_buffer = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
+
+    #In una mia ipotetica shader la position e'sempre in posizione 0
+    glEnableVertexAttribArray(0)
+    glVertexAttribPointer(0, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+
+    vertices = np.array(vertices, dtype=np.float32)
+    glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+
+    glBindVertexArray(0)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    return buffer
+
 def create_mesh_buffers(verts, wed_tcoord, inds, mesh_shader):
     """
         Mesh buffer creation.
@@ -92,7 +121,6 @@ def create_mesh_buffers(verts, wed_tcoord, inds, mesh_shader):
     
     Returns VAO
     """
-    
     vert_pos = np.zeros((len(inds) * 3, 3), dtype=np.float32)
     tcoords = np.zeros((len(inds) * 3, 2), dtype=np.float32)
     
@@ -232,8 +260,88 @@ def set_sensor(shader: shader.Shader, sensor):
     shader.set_float("k3", sensor.calibration["k3"])
     shader.set_float("p1", sensor.calibration["p1"])
     shader.set_float("p2", sensor.calibration["p2"])
-    shader.set_float("b1", sensor.calibration["b1"])
-    shader.set_float("b2", sensor.calibration["b2"])
+
+def build_proj_matrix(sensor, nearPlane = 0.01, farPlane = 100):
+    f = sensor.calibration["f"]  # focal length in pixels
+    w = sensor.resolution["width"]
+    h = sensor.resolution["height"]
+    cx = w / 2.0 + sensor.calibration["cx"]
+    cy = h / 2.0 + sensor.calibration["cy"]
+
+    # Create matrix using glm (already column-major)
+    return glm.mat4(
+        2 * f / w, 0, 0, 0,
+        0, 2 * f / h, 0, 0,
+        (w - 2 * cx) / w, (h - 2 * cy) / h, -(farPlane + nearPlane) / (farPlane - nearPlane), -1,
+        0, 0, -2 * farPlane * nearPlane / (farPlane - nearPlane), 0
+    )
+
+def debug_vert_shader(sensor, verts, view):
+    resolution_width = sensor.resolution["width"]
+    resolution_height = sensor.resolution["height"]
+    f = sensor.calibration["f"]
+    cx = sensor.calibration["cx"]
+    cy = sensor.calibration["cy"]
+    k1 = sensor.calibration["k1"]
+    k2 = sensor.calibration["k2"]
+    k3 = sensor.calibration["k3"]
+    p1 = sensor.calibration["p1"]
+    p2 = sensor.calibration["p2"]
+
+    minZ = 9999999
+    divByZeroCount = 0
+    nearZeroNumberCount = 0
+
+    log.print_debug("Initializing xyz_to_uv() testing.... \n")
+    for i in range(len(verts)):
+        p = glm.vec3(verts[i, 0], verts[i, 1], verts[i, 2])
+        p = view * p
+
+        if p.z < 0.001:
+            divByZeroCount += 1
+
+            if p.z == 0:
+                log.print_debug("P.Z IS ZERO")
+            else:
+                log.print_debug("P.Z IS VERY CLOSE TO ZERO")
+
+        if p.z < minZ:
+            minZ = p.z
+
+        x = p.x / p.z
+        y = -p.y / p.z
+
+        if x < 0.01:
+            nearZeroNumberCount += 1
+
+        if y < 0.01:
+            nearZeroNumberCount += 1
+
+
+        r = np.sqrt(x*x+y*y)
+        r2 = r*r
+        r4 = r2*r2
+        r6 = r4*r2
+
+
+        A = (1.0+k1*r2+k2*r4+k3*r6)
+        B = (1.0)
+
+        xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B
+        yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B
+
+        u = resolution_width*0.5+cx+xp*f
+        v = resolution_height*0.5+cy+yp*f
+
+        u /= resolution_width
+        v /= resolution_height
+
+        result = glm.vec2(u,v)
+
+    log.print_debug(f"Div by Zero or Close: {divByZeroCount}\n")
+    log.print_debug(f"Near Zero or Close: {nearZeroNumberCount}\n")
+    log.print_debug(f"Smallest p.Z : {minZ}\n")
+    log.print_debug("End----------------------- \n")
 
 def main():
     glm.silence(4)
@@ -289,7 +397,11 @@ def main():
     #Load shaders
     SHADER_MAIN = shader.load_shader_from_files("main") #shader.Shader(VERTEX_SHADER, FRAGMENT_SHADER)
     SHADER_FRAME = shader.load_shader_from_files("frame")
-    
+    SHADER_QUAD = shader.load_shader_from_files("quad")
+
+    #Create full-screen quad
+    screen_quad = create_quad_buffer()
+
     #Load mesh
     vertices, faces, wed_tcoords, bbox_min, bbox_max, texture_id, tex_w, tex_h = load_mesh( os.path.join(MAIN_PATH, MESH_NAME) )
     rend = renderable(
@@ -325,13 +437,16 @@ def main():
 
     ortho_proj: glm.mat4 = glm.ortho(-2.7859610141394064, 2.8135035058605933, -2.365373768699055, 2.3856638113009452, 0.01, 10) #ortho.extents
     
-    ortho_center = glm.vec3(5.0721218747120318  , 0.3702069405071875 , -7.9174685381193006 ) #? #ortho.projection.translation
+    ortho_center =  glm.vec3(5.0721218747120318  , 0.3702069405071875 , -7.9174685381193006 ) #? #ortho.projection.translation
     ortho_view = glm.lookAt(ortho_center + glm.vec3(0, 0, 1), ortho_center, glm.vec3(0, 1, 0))
 
     #Calculate all camera matrices
     camera_matrices : list[glm.mat4x4] = [glm.mat4] * len(cameras)
     for i in range(0, len(cameras)):
         camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
+
+    """* glm.rotate(glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))"""
+
 
     #Import Label map
     label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST)
@@ -358,8 +473,14 @@ def main():
     glEnable(GL_DEPTH_TEST)
     running = True
 
+    log.WARNING_LOG_ENABLED = False
+
+    RENDER_FBO = Fbo(W, H)
+
     while running:
         glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+        glEnable(GL_DEPTH_TEST)
+
         #Handle PyGames&ImGui events ------------------
         for event in pygame.event.get():
             IMGUI_RENDERER.process_event(event)
@@ -385,7 +506,7 @@ def main():
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
                 if view_mode == ViewMode.FREE:
-                    arcBall.set_distance(arcBall.distance - yoffset  * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
+                    arcBall.set_distance(arcBall.distance - yoffset  * 4 * DELTA_TIME) # pyright: ignore[reportPossiblyUnboundVariable]
                 #tb.mouse_scroll(xoffset, yoffset)
             
             # Mouse button
@@ -418,6 +539,10 @@ def main():
 
                 if selected_camera_id_changed:
                     selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
+                    tmp_inverted = glm.inverse(camera_matrices[selected_camera_id])
+                    log.print_info(f"Current camera transform:\n"
+                                   f"Position: {tmp_inverted * glm.vec3(0)}"
+                                   f"Direction: {tmp_inverted * glm.vec3(0, 0, -1)}")
 
                     glUseProgram(SHADER_MAIN.program)
                     set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
@@ -485,6 +610,7 @@ def main():
                 final_view = arcBall.get_view_matrix()
             
             case ViewMode.CAMERA:
+                SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensors[cameras[selected_camera_id].sensor_id]))
                 final_view = glm.inverse(camera_matrices[selected_camera_id])
 
             case ViewMode.ORTHO:
@@ -495,7 +621,7 @@ def main():
         SHADER_MAIN.set_mat4("uView", final_view)
         SHADER_MAIN.set_mat4("uModel", glm.mat4(1.0))
 
-        #Activate renderable obj's texture
+        #Activate renderable obj's texture -------------
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, rend.texture_id)
         SHADER_MAIN.set_int("uColorTex", 0)
@@ -504,15 +630,41 @@ def main():
         glBindTexture(GL_TEXTURE_2D, label_map)
         SHADER_MAIN.set_int("uLabelMap", 1)
 
-        #Render the actual renderable obj-------------
-        glBindVertexArray(rend.vao)
-        glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
-        glBindVertexArray(0)
+        if view_mode == ViewMode.CAMERA:
+            glBindFramebuffer(GL_FRAMEBUFFER, RENDER_FBO.id_fbo)
+            glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+            glEnable(GL_DEPTH_TEST)
 
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glUseProgram(0)
+            #Render the actual renderable obj off-screen -------------
+            glBindVertexArray(rend.vao)
+            glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
+            glBindVertexArray(0)
 
-        #Render debug/handles objects-----------------
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glUseProgram(0)
+            glBindFramebuffer(GL_FRAMEBUFFER, 0)
+
+            #Render quad with fbo with distortion effect applied -------------
+            glUseProgram(SHADER_QUAD.program)
+            glBindVertexArray(screen_quad) #In teoria qui dovresti levare il depthTest pero' mi torna utile cosi non disegno tutta la roba di debug
+
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, RENDER_FBO.id_color)
+            glDrawArrays(GL_TRIANGLES, 0, 6)
+
+            glBindVertexArray(0)
+            glUseProgram(0)
+        else:
+            glBindFramebuffer(GL_FRAMEBUFFER, 0)
+            #Render the actual renderable obj -------------
+            glBindVertexArray(rend.vao)
+            glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
+            glBindVertexArray(0)
+
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glUseProgram(0)
+
+        #Render debug/handles objects -----------------
         glUseProgram(SHADER_FRAME.program)
         #Set view/proj matrices
         SHADER_FRAME.set_mat4("uProj", projection_matrix)
@@ -531,9 +683,16 @@ def main():
 
         #Draw all the camera's frame
         if show_camera_frames:
+            SHADER_FRAME.set_mat4("uModel", camera_matrices[selected_camera_id])
+            glDrawArrays(GL_LINES, 0, 6)
+
+            SHADER_FRAME.set_mat4("uModel", (camera_matrices[selected_camera_id]) * glm.inverse(build_proj_matrix(sensors[cameras[selected_camera_id].sensor_id]))) # type: ignore
+            draw_box(glm.vec3(0), glm.vec3(2))
+            """
             for i in range(0,len(cameras)):
                 SHADER_FRAME.set_mat4("uModel", camera_matrices[i])
                 glDrawArrays(GL_LINES, 0, 6)
+            """
 
         glBindVertexArray(0)
         glUseProgram(0)

@@ -40,3 +40,8 @@ ORTO-COSE:
 PSEUDOLABELS:
     []Ottieni lista immagini(?)
     []Troppi valori magici, trovare un modo per ricavarli da file.
+
+
+
+
+
