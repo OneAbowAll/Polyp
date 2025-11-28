@@ -76,3 +76,8 @@ class Fbo:
             print("FBO Unsupported")
         else:
             print("Undefined FBO error")
+
+    def __del__(self):
+        glDeleteTextures(1, [self.id_color])
+        glDeleteRenderbuffers(1, [self.id_depth])
+        glDeleteFramebuffers(1, [self.id_fbo])

@@ -2,6 +2,7 @@ import os
 import glm
 from OpenGL.GL import glGetUniformLocation, glUniform1i, glUniform1f, glUniform3f, glUniformMatrix4fv, GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_FALSE
 from OpenGL.GL.shaders import compileProgram, compileShader
+from OpenGL.raw.GL.VERSION.GL_2_0 import glUniform2f
 
 import log
 
@@ -61,6 +62,12 @@ class Shader:
 
     def set_float3(self, name, value: list[float]):
         glUniform3f(self.uni(name), value[0], value[1], value[2])
+
+    def set_float2(self, name, value: list[float]):
+        glUniform2f(self.uni(name), value[0], value[1])
+
+    def set_vec2(self, name, value: glm.vec2):
+        glUniform2f(self.uni(name), value.x, value.y)
 
     def set_vec3(self, name, value: glm.vec3):
         glUniform3f(self.uni(name), value.x, value.y, value.z)

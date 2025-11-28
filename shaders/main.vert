@@ -39,10 +39,13 @@ uniform float b2;
 uniform float near;
 uniform float far;
 
-vec2 xyz_to_uv(vec3 p){
-    float x = p.x/p.z;
-    float y = -p.y/p.z;
-    float r = sqrt(x*x+y*y);
+vec2 xyz_to_uv(vec3 p)
+{
+
+    float x = p.x / p.z;
+    float y = -p.y / p.z;
+    float r = sqrt(x*x + y*y);
+
     float r2 = r*r;
     float r4 = r2*r2;
     float r6 = r4*r2;
@@ -73,10 +76,10 @@ void main(void)
     {
         float focmm = f / resolution_width;
         vec3 pos_vs = (uView * uModel * vec4(aPosition, 1.0)).xyz;
-        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.0*focmm), 1.0);
+        //gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.0*focmm), 1.0);
 
-        //vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
-        //gl_Position = pos;
+        vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
+        gl_Position = pos;
 
     }
     else

@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 
@@ -248,7 +249,7 @@ def load_filepaths():
     log.print_info(f"Metashape file: {metashape_file}\n")
     return main_path, imgs_path, mesh_name, metashape_file
 
-def set_sensor(shader: shader.Shader, sensor):
+def set_sensor(shader: shader.Shader, sensor, overscanFactor = 1.2):
     shader.set_int("resolution_width", sensor.resolution["width"])
     shader.set_int("resolution_height", sensor.resolution["height"])
 
@@ -261,87 +262,100 @@ def set_sensor(shader: shader.Shader, sensor):
     shader.set_float("p1", sensor.calibration["p1"])
     shader.set_float("p2", sensor.calibration["p2"])
 
-def build_proj_matrix(sensor, nearPlane = 0.01, farPlane = 100):
-    f = sensor.calibration["f"]  # focal length in pixels
-    w = sensor.resolution["width"]
-    h = sensor.resolution["height"]
-    cx = w / 2.0 + sensor.calibration["cx"]
-    cy = h / 2.0 + sensor.calibration["cy"]
+    overscan_width = int(sensor.resolution["width"] * overscanFactor)
+    overscan_height = int(sensor.resolution["height"] * overscanFactor)
+    shader.set_vec2("overscanResolution", glm.vec2(overscan_width, overscan_height))
 
-    # Create matrix using glm (already column-major)
+def build_proj_matrix(sensor, near = 1.0, far = 100.0, overscan_factor=1.2):
+    w = sensor.resolution["width"] * overscan_factor
+    h = sensor.resolution["height"] * overscan_factor
+    f = sensor.calibration["f"]  # focal length in pixels
+
+    cx = (sensor.resolution["width"] / 2.0 + sensor.calibration["cx"]) * overscan_factor
+    cy = (sensor.resolution["height"] / 2.0 - sensor.calibration["cy"]) * overscan_factor
+
+    fx = f + sensor.calibration["b1"]
+    s = sensor.calibration["b2"]
+
+
     return glm.mat4(
         2 * f / w, 0, 0, 0,
         0, 2 * f / h, 0, 0,
-        (w - 2 * cx) / w, (h - 2 * cy) / h, -(farPlane + nearPlane) / (farPlane - nearPlane), -1,
-        0, 0, -2 * farPlane * nearPlane / (farPlane - nearPlane), 0
+        (w - 2 * cx) / w, (h - 2 * cy) / h, -(far + near) / (far - near), -1,
+        0, 0, -2 * far * near / (far - near), 0
     )
 
-def debug_vert_shader(sensor, verts, view):
-    resolution_width = sensor.resolution["width"]
-    resolution_height = sensor.resolution["height"]
-    f = sensor.calibration["f"]
-    cx = sensor.calibration["cx"]
-    cy = sensor.calibration["cy"]
-    k1 = sensor.calibration["k1"]
-    k2 = sensor.calibration["k2"]
-    k3 = sensor.calibration["k3"]
-    p1 = sensor.calibration["p1"]
-    p2 = sensor.calibration["p2"]
+    proj = glm.mat4(
+        glm.vec4(2 * fx / w, 2 * s / w, 2 * (cx / w) - 1, 0),
+        glm.vec4(0, 2 * f / h, 2 * (cy / h) - 1, 0),
+        glm.vec4(0, 0, -(far + near) / (far - near), -2 * far * near / (far - near)),
+        glm.vec4(0, 0, -1, 0)
+    )
+    return glm.transpose(proj)
 
-    minZ = 9999999
-    divByZeroCount = 0
-    nearZeroNumberCount = 0
+def render_from_camera(sensor, render_shader, distortion_shader, renderable, screen_quad, overscanFactor):
+    """
+    Disegna il renderable applicando una distorsione della lente con i settings di calibrazione in sensor.
+    !!! ATTENZIONE !!!
+    Quando si usa questa funzione bisogna settare prima:
+        -uProj, uView, uColorTex e la uLabelMap
 
-    log.print_debug("Initializing xyz_to_uv() testing.... \n")
-    for i in range(len(verts)):
-        p = glm.vec3(verts[i, 0], verts[i, 1], verts[i, 2])
-        p = view * p
+    Inoltre la render_mode deve essere settata anchessa prima.
+    """
 
-        if p.z < 0.001:
-            divByZeroCount += 1
+    #Prendi le dimensioni del viewport prima di cambiarle
+    viewport = glGetIntegerv(GL_VIEWPORT)
+    old_width = viewport[2]
+    old_height = viewport[3]
 
-            if p.z == 0:
-                log.print_debug("P.Z IS ZERO")
-            else:
-                log.print_debug("P.Z IS VERY CLOSE TO ZERO")
+    sensor_width = sensor.resolution["width"]
+    sensor_height = sensor.resolution["height"]
+    overscan_width = int(sensor_width * overscanFactor)
+    overscan_height = int(sensor_height * overscanFactor)
 
-        if p.z < minZ:
-            minZ = p.z
+    OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
+    SAVE_FBO = Fbo(sensor_width, sensor_height)
 
-        x = p.x / p.z
-        y = -p.y / p.z
+    # Disegna il modello sul framebuffer con dell'overscan
+    glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
+    glViewport(0, 0, overscan_width, overscan_height)
 
-        if x < 0.01:
-            nearZeroNumberCount += 1
+    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+    glEnable(GL_DEPTH_TEST)
 
-        if y < 0.01:
-            nearZeroNumberCount += 1
+    glUseProgram(render_shader.program)
 
+    render_shader.set_int("uViewMode", ViewMode.CAMERA)
 
-        r = np.sqrt(x*x+y*y)
-        r2 = r*r
-        r4 = r2*r2
-        r6 = r4*r2
+    glBindVertexArray(renderable.vao)
+    glDrawArrays(GL_TRIANGLES, 0, renderable.n_faces * 3)
+    glBindVertexArray(0)
+    glUseProgram(0)
 
+    # Applica il post processing sulla texture del framebuffer
+    glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
+    glViewport(0, 0, sensor_width, sensor_height)
 
-        A = (1.0+k1*r2+k2*r4+k3*r6)
-        B = (1.0)
+    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+    glDisable(GL_DEPTH_TEST)
 
-        xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B
-        yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B
+    glUseProgram(distortion_shader.program)
+    set_sensor(distortion_shader, sensor, overscanFactor)
+    glBindVertexArray(screen_quad)
 
-        u = resolution_width*0.5+cx+xp*f
-        v = resolution_height*0.5+cy+yp*f
+    glActiveTexture(GL_TEXTURE0)
+    glBindTexture(GL_TEXTURE_2D, OVERSCAN_FBO.id_color)
+    glDrawArrays(GL_TRIANGLES, 0, 6)
 
-        u /= resolution_width
-        v /= resolution_height
+    glBindVertexArray(0)
 
-        result = glm.vec2(u,v)
+    #Riporta allo stato precedente
+    glUseProgram(0)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    glViewport(0, 0, old_width, old_height)
+    glEnable(GL_DEPTH_TEST)
 
-    log.print_debug(f"Div by Zero or Close: {divByZeroCount}\n")
-    log.print_debug(f"Near Zero or Close: {nearZeroNumberCount}\n")
-    log.print_debug(f"Smallest p.Z : {minZ}\n")
-    log.print_debug("End----------------------- \n")
+    return SAVE_FBO
 
 def main():
     glm.silence(4)
@@ -443,10 +457,9 @@ def main():
     #Calculate all camera matrices
     camera_matrices : list[glm.mat4x4] = [glm.mat4] * len(cameras)
     for i in range(0, len(cameras)):
-        camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform))
+        camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform)) * glm.rotate(glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))
 
     """* glm.rotate(glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))"""
-
 
     #Import Label map
     label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST)
@@ -459,18 +472,23 @@ def main():
     show_origin_frame = True
     show_camera_frames = True
     show_debug = True
+
+    OVERSCAN = 1.2
+    MAX_CAMERA = 20 #There are more than 300 cameras view to render, for debugging we can stop sooner
     
     #Set first sensor
-    glUseProgram(SHADER_MAIN.program)
-    set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
+    glUseProgram(SHADER_QUAD.program)
+    set_sensor(SHADER_QUAD, sensors[cameras[selected_camera_id].sensor_id])
+    glUseProgram(0)
 
+    #Set ortho projection
+    glUseProgram(SHADER_MAIN.program)
     SHADER_MAIN.set_mat4("uOrthoProj",  ortho_proj)
     SHADER_MAIN.set_mat4("uOrthoView",  ortho_view)
     glUseProgram(0)
     
     #OpenGl settings
     glClearColor(0, 0, 0, 1)
-    glEnable(GL_DEPTH_TEST)
     running = True
 
     log.WARNING_LOG_ENABLED = False
@@ -539,19 +557,100 @@ def main():
 
                 if selected_camera_id_changed:
                     selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
-                    tmp_inverted = glm.inverse(camera_matrices[selected_camera_id])
-                    log.print_info(f"Current camera transform:\n"
-                                   f"Position: {tmp_inverted * glm.vec3(0)}"
-                                   f"Direction: {tmp_inverted * glm.vec3(0, 0, -1)}")
 
                     glUseProgram(SHADER_MAIN.program)
                     set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
                     glUseProgram(0)
 
-                if imgui.button("Render pseudo-labels"):
+                if imgui.button("Render all pseudo-labels"):
                     glUseProgram(SHADER_MAIN.program)
-                    SHADER_MAIN.set_int("uRenderMode", RenderMode.LABEL_ONLY)
+                    SHADER_MAIN.set_int("uRenderMode", RenderMode.TEXTURE_ONLY)
                     SHADER_MAIN.set_int("uViewMode", ViewMode.CAMERA)
+
+                    SHADER_MAIN.set_mat4("uModel", glm.mat4(1))
+
+                    length = min(MAX_CAMERA, len(cameras))
+                    print("Rendering Pseudo-Labels...")
+                    print(f"{0}/{length} rendered.")
+                    for i in range(0, length):
+                        sensor = sensors[cameras[i].sensor_id]
+
+                        sensor_width = sensor.resolution["width"]
+                        sensor_height = sensor.resolution["height"]
+                        overscan_width = int(sensor_width * OVERSCAN)
+                        overscan_height = int(sensor_height * OVERSCAN)
+
+                        OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
+                        SAVE_FBO = Fbo(sensor_width, sensor_height)
+
+                        #Disegna il modello sul framebuffer con dell'overscan
+                        glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
+                        glViewport(0, 0, overscan_width, overscan_height)
+                        #pygame.display.set_mode((overscan_width, overscan_height), pygame.OPENGL|pygame.DOUBLEBUF)
+
+                        glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+                        glEnable(GL_DEPTH_TEST)
+
+                        glUseProgram(SHADER_MAIN.program)
+                        glActiveTexture(GL_TEXTURE0)
+                        glBindTexture(GL_TEXTURE_2D, rend.texture_id)
+                        SHADER_MAIN.set_int("uColorTex", 0)
+
+                        glActiveTexture(GL_TEXTURE1)
+                        glBindTexture(GL_TEXTURE_2D, label_map)
+                        SHADER_MAIN.set_int("uLabelMap", 1)
+
+                        SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensor, OVERSCAN))
+                        SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[i]))
+
+                        glBindVertexArray(rend.vao)
+                        glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
+                        glBindVertexArray(0)
+                        glUseProgram(0)
+
+                        #Applica il post processing sulla texture del framebuffer
+                        glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
+                        glViewport(0, 0, sensor_width, sensor_height)
+                        #pygame.display.set_mode((sensor_width, sensor_height), pygame.OPENGL|pygame.DOUBLEBUF)
+                        glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+                        glDisable(GL_DEPTH_TEST)  # Don't need depth for post-processing
+
+                        glUseProgram(SHADER_QUAD.program)
+                        set_sensor(SHADER_QUAD, sensor, OVERSCAN)
+                        glBindVertexArray(screen_quad)
+
+                        glActiveTexture(GL_TEXTURE0)
+                        glBindTexture(GL_TEXTURE_2D, OVERSCAN_FBO.id_color)
+                        glDrawArrays(GL_TRIANGLES, 0, 6)
+
+                        glBindVertexArray(0)
+                        glUseProgram(0)
+
+                        #Salva a texture il risultato
+                        glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
+                        frameBytes = glReadPixels(0, 0, sensor_width, sensor_height, GL_RGB, GL_UNSIGNED_BYTE, None)
+                        result = Image.frombuffer("RGB", (sensor_width, sensor_height), frameBytes, "raw", "RGB", 0, 1)
+                        result = ImageOps.flip(result)
+                        result.save(os.path.join(MAIN_PATH, "output", "PseudoLabel_" + cameras[i].label + ".png"))
+
+                        print(f"{i+1}/{length} rendered.")
+
+                    #Riporta allo stato precedente
+                    glUseProgram(0)
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+                    glViewport(0, 0, W, H)
+                    glEnable(GL_DEPTH_TEST)
+                    #pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
+
+                if imgui.button("Render selected camera"):
+                    sensor = sensors[cameras[selected_camera_id].sensor_id]
+
+                    glUseProgram(SHADER_MAIN.program)
+                    SHADER_MAIN.set_int("uRenderMode", RenderMode.TEXTURE_ONLY)
+
+                    SHADER_MAIN.set_mat4("uModel", glm.mat4(1))
+                    SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensor, OVERSCAN))
+                    SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[selected_camera_id]))
 
                     glActiveTexture(GL_TEXTURE0)
                     glBindTexture(GL_TEXTURE_2D, rend.texture_id)
@@ -560,29 +659,75 @@ def main():
                     glActiveTexture(GL_TEXTURE1)
                     glBindTexture(GL_TEXTURE_2D, label_map)
                     SHADER_MAIN.set_int("uLabelMap", 1)
-
-                    SHADER_MAIN.set_mat4("uModel", chunk_matrix)
-
-                    glViewport(0, 0, 4000, 3000)
-                    pygame.display.set_mode((4000, 3000), pygame.OPENGL|pygame.DOUBLEBUF)
-                    for i in range(0, len(cameras)):
-                        glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
-                        SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[i]))
-                        set_sensor(SHADER_MAIN, sensors[cameras[i].sensor_id])
-
-                        glBindVertexArray(rend.vao)
-                        glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
-                        glBindVertexArray(0)
-
-                        frameBytes = glReadPixels(0, 0, 4000, 3000, GL_RGB, GL_UNSIGNED_BYTE, None)
-                        result = Image.frombuffer("RGB", (4000, 3000), frameBytes, "raw", "RGB", 0, 1)
-                        result = ImageOps.flip(result)
-                        result.save(os.path.join(MAIN_PATH, "output", "PseudoLabel_" + cameras[i].label + ".png"))
-
-
                     glUseProgram(0)
-                    glViewport(0, 0, W, H)
-                    pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
+
+                    sensor_width = sensor.resolution["width"]
+                    sensor_height = sensor.resolution["height"]
+                    overscan_width = int(sensor_width * OVERSCAN)
+                    overscan_height = int(sensor_height * OVERSCAN)
+
+                    """
+                    OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
+                    SAVE_FBO = Fbo(sensor_width, sensor_height)
+
+                    
+                    # Disegna il modello sul framebuffer con dell'overscan
+                    glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
+                    glViewport(0, 0, overscan_width, overscan_height)
+                    #pygame.display.set_mode((overscan_width, overscan_height), pygame.OPENGL | pygame.DOUBLEBUF)
+
+                    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+                    glEnable(GL_DEPTH_TEST)
+
+                    glUseProgram(SHADER_MAIN.program)
+                    glActiveTexture(GL_TEXTURE0)
+                    glBindTexture(GL_TEXTURE_2D, rend.texture_id)
+                    SHADER_MAIN.set_int("uColorTex", 0)
+
+                    glActiveTexture(GL_TEXTURE1)
+                    glBindTexture(GL_TEXTURE_2D, label_map)
+                    SHADER_MAIN.set_int("uLabelMap", 1)
+
+                    SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensor, OVERSCAN))
+                    SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[selected_camera_id]))
+
+                    glBindVertexArray(rend.vao)
+                    glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
+                    glBindVertexArray(0)
+                    glUseProgram(0)
+
+                    # Applica il post processing sulla texture del framebuffer
+                    glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
+                    glViewport(0, 0, sensor_width, sensor_height)
+                    #pygame.display.set_mode((sensor_width, sensor_height), pygame.OPENGL | pygame.DOUBLEBUF)
+                    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+                    glDisable(GL_DEPTH_TEST)  # Don't need depth for post-processing
+
+                    glUseProgram(SHADER_QUAD.program)
+                    set_sensor(SHADER_QUAD, sensor, OVERSCAN)
+                    glBindVertexArray(screen_quad)
+
+                    glActiveTexture(GL_TEXTURE0)
+                    glBindTexture(GL_TEXTURE_2D, OVERSCAN_FBO.id_color)
+                    glDrawArrays(GL_TRIANGLES, 0, 6)
+
+                    glBindVertexArray(0)
+                    glUseProgram(0)
+                    """
+                    result_fbo = render_from_camera(sensor, SHADER_MAIN, SHADER_QUAD, rend, screen_quad, OVERSCAN)
+
+                    # Salva a texture il risultato
+                    glBindFramebuffer(GL_FRAMEBUFFER, result_fbo.id_fbo)
+                    frameBytes = glReadPixels(0, 0, sensor_width, sensor_height, GL_RGB, GL_UNSIGNED_BYTE, None)
+                    result = Image.frombuffer("RGB", (sensor_width, sensor_height), frameBytes, "raw", "RGB", 0, 1)
+                    result = ImageOps.flip(result)
+                    result.save(os.path.join(MAIN_PATH, "output", "PseudoLabel_" + cameras[selected_camera_id].label + ".png"))
+
+                #Riporta allo stato precedente
+                glUseProgram(0)
+                glBindFramebuffer(GL_FRAMEBUFFER, 0)
+                glViewport(0, 0, W, H)
+                glEnable(GL_DEPTH_TEST)
 
                 imgui.separator()
                 _, show_origin_frame = imgui.checkbox("Show origin frame", show_origin_frame)
@@ -610,7 +755,7 @@ def main():
                 final_view = arcBall.get_view_matrix()
             
             case ViewMode.CAMERA:
-                SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensors[cameras[selected_camera_id].sensor_id]))
+                SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensors[cameras[selected_camera_id].sensor_id], OVERSCAN))
                 final_view = glm.inverse(camera_matrices[selected_camera_id])
 
             case ViewMode.ORTHO:
@@ -646,6 +791,7 @@ def main():
 
             #Render quad with fbo with distortion effect applied -------------
             glUseProgram(SHADER_QUAD.program)
+            set_sensor(SHADER_QUAD, sensors[cameras[selected_camera_id].sensor_id], OVERSCAN)
             glBindVertexArray(screen_quad) #In teoria qui dovresti levare il depthTest pero' mi torna utile cosi non disegno tutta la roba di debug
 
             glActiveTexture(GL_TEXTURE0)
