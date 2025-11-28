@@ -15,8 +15,8 @@ import imgui
 from imgui.integrations.pygame import PygameRenderer
 
 import arcball
-import debug_draw
-from debug_draw import draw_box, draw_line, draw_rect_xz
+
+from debug_draw import draw_box
 import log
 import shader
 import texture
@@ -253,14 +253,14 @@ def set_sensor(shader: shader.Shader, sensor, overscanFactor = 1.2):
     shader.set_int("resolution_width", sensor.resolution["width"])
     shader.set_int("resolution_height", sensor.resolution["height"])
 
-    shader.set_float("f", sensor.calibration["f"])
-    shader.set_float("cx", sensor.calibration["cx"])
-    shader.set_float("cy", sensor.calibration["cy"])
-    shader.set_float("k1", sensor.calibration["k1"])
-    shader.set_float("k2", sensor.calibration["k2"])
-    shader.set_float("k3", sensor.calibration["k3"])
-    shader.set_float("p1", sensor.calibration["p1"])
-    shader.set_float("p2", sensor.calibration["p2"])
+    shader.set_float("f", float(sensor.calibration["f"]))
+    shader.set_float("cx", float(sensor.calibration["cx"]))
+    shader.set_float("cy", float(sensor.calibration["cy"]))
+    shader.set_float("k1", float(sensor.calibration["k1"]))
+    shader.set_float("k2", float(sensor.calibration["k2"]))
+    shader.set_float("k3", float(sensor.calibration["k3"]))
+    shader.set_float("p1", float(sensor.calibration["p1"]))
+    shader.set_float("p2", float(sensor.calibration["p2"]))
 
     overscan_width = int(sensor.resolution["width"] * overscanFactor)
     overscan_height = int(sensor.resolution["height"] * overscanFactor)
@@ -293,7 +293,7 @@ def build_proj_matrix(sensor, near = 1.0, far = 100.0, overscan_factor=1.2):
     )
     return glm.transpose(proj)
 
-def render_from_camera(sensor, render_shader, distortion_shader, renderable, screen_quad, overscanFactor):
+def render_from_camera(sensor, render_shader, distortion_shader, renderable, screen_quad, ortoProj, ortoView, overscanFactor):
     """
     Disegna il renderable applicando una distorsione della lente con i settings di calibrazione in sensor.
     !!! ATTENZIONE !!!
@@ -324,8 +324,10 @@ def render_from_camera(sensor, render_shader, distortion_shader, renderable, scr
     glEnable(GL_DEPTH_TEST)
 
     glUseProgram(render_shader.program)
-
     render_shader.set_int("uViewMode", ViewMode.CAMERA)
+
+    render_shader.set_mat4("uOrthoProj",  ortoProj)
+    render_shader.set_mat4("uOrthoView",  ortoView)
 
     glBindVertexArray(renderable.vao)
     glDrawArrays(GL_TRIANGLES, 0, renderable.n_faces * 3)
@@ -473,7 +475,7 @@ def main():
     show_camera_frames = True
     show_debug = True
 
-    OVERSCAN = 1.2
+    OVERSCAN = 1
     MAX_CAMERA = 20 #There are more than 300 cameras view to render, for debugging we can stop sooner
     
     #Set first sensor
@@ -558,16 +560,15 @@ def main():
                 if selected_camera_id_changed:
                     selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
 
-                    glUseProgram(SHADER_MAIN.program)
+                    glUseProgram(SHADER_QUAD.program)
                     set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
                     glUseProgram(0)
 
                 if imgui.button("Render all pseudo-labels"):
                     glUseProgram(SHADER_MAIN.program)
-                    SHADER_MAIN.set_int("uRenderMode", RenderMode.TEXTURE_ONLY)
-                    SHADER_MAIN.set_int("uViewMode", ViewMode.CAMERA)
-
+                    SHADER_MAIN.set_int("uRenderMode", RenderMode.LABEL_ONLY)
                     SHADER_MAIN.set_mat4("uModel", glm.mat4(1))
+                    glUseProgram(0)
 
                     length = min(MAX_CAMERA, len(cameras))
                     print("Rendering Pseudo-Labels...")
@@ -583,10 +584,10 @@ def main():
                         OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
                         SAVE_FBO = Fbo(sensor_width, sensor_height)
 
-                        #Disegna il modello sul framebuffer con dell'overscan
+                        # Disegna il modello sul framebuffer con dell'overscan
                         glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
                         glViewport(0, 0, overscan_width, overscan_height)
-                        #pygame.display.set_mode((overscan_width, overscan_height), pygame.OPENGL|pygame.DOUBLEBUF)
+                        # pygame.display.set_mode((overscan_width, overscan_height), pygame.OPENGL|pygame.DOUBLEBUF)
 
                         glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
                         glEnable(GL_DEPTH_TEST)
@@ -608,10 +609,10 @@ def main():
                         glBindVertexArray(0)
                         glUseProgram(0)
 
-                        #Applica il post processing sulla texture del framebuffer
+                        # Applica il post processing sulla texture del framebuffer
                         glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
                         glViewport(0, 0, sensor_width, sensor_height)
-                        #pygame.display.set_mode((sensor_width, sensor_height), pygame.OPENGL|pygame.DOUBLEBUF)
+                        # pygame.display.set_mode((sensor_width, sensor_height), pygame.OPENGL|pygame.DOUBLEBUF)
                         glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
                         glDisable(GL_DEPTH_TEST)  # Don't need depth for post-processing
 
@@ -626,7 +627,7 @@ def main():
                         glBindVertexArray(0)
                         glUseProgram(0)
 
-                        #Salva a texture il risultato
+                        # Salva a texture il risultato
                         glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
                         frameBytes = glReadPixels(0, 0, sensor_width, sensor_height, GL_RGB, GL_UNSIGNED_BYTE, None)
                         result = Image.frombuffer("RGB", (sensor_width, sensor_height), frameBytes, "raw", "RGB", 0, 1)
@@ -645,36 +646,18 @@ def main():
                 if imgui.button("Render selected camera"):
                     sensor = sensors[cameras[selected_camera_id].sensor_id]
 
-                    glUseProgram(SHADER_MAIN.program)
-                    SHADER_MAIN.set_int("uRenderMode", RenderMode.TEXTURE_ONLY)
-
-                    SHADER_MAIN.set_mat4("uModel", glm.mat4(1))
-                    SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensor, OVERSCAN))
-                    SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[selected_camera_id]))
-
-                    glActiveTexture(GL_TEXTURE0)
-                    glBindTexture(GL_TEXTURE_2D, rend.texture_id)
-                    SHADER_MAIN.set_int("uColorTex", 0)
-
-                    glActiveTexture(GL_TEXTURE1)
-                    glBindTexture(GL_TEXTURE_2D, label_map)
-                    SHADER_MAIN.set_int("uLabelMap", 1)
-                    glUseProgram(0)
-
                     sensor_width = sensor.resolution["width"]
                     sensor_height = sensor.resolution["height"]
                     overscan_width = int(sensor_width * OVERSCAN)
                     overscan_height = int(sensor_height * OVERSCAN)
 
-                    """
                     OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
                     SAVE_FBO = Fbo(sensor_width, sensor_height)
 
-                    
                     # Disegna il modello sul framebuffer con dell'overscan
                     glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
                     glViewport(0, 0, overscan_width, overscan_height)
-                    #pygame.display.set_mode((overscan_width, overscan_height), pygame.OPENGL | pygame.DOUBLEBUF)
+                    # pygame.display.set_mode((overscan_width, overscan_height), pygame.OPENGL|pygame.DOUBLEBUF)
 
                     glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
                     glEnable(GL_DEPTH_TEST)
@@ -699,7 +682,7 @@ def main():
                     # Applica il post processing sulla texture del framebuffer
                     glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
                     glViewport(0, 0, sensor_width, sensor_height)
-                    #pygame.display.set_mode((sensor_width, sensor_height), pygame.OPENGL | pygame.DOUBLEBUF)
+                    # pygame.display.set_mode((sensor_width, sensor_height), pygame.OPENGL|pygame.DOUBLEBUF)
                     glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
                     glDisable(GL_DEPTH_TEST)  # Don't need depth for post-processing
 
@@ -713,11 +696,9 @@ def main():
 
                     glBindVertexArray(0)
                     glUseProgram(0)
-                    """
-                    result_fbo = render_from_camera(sensor, SHADER_MAIN, SHADER_QUAD, rend, screen_quad, OVERSCAN)
 
                     # Salva a texture il risultato
-                    glBindFramebuffer(GL_FRAMEBUFFER, result_fbo.id_fbo)
+                    glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
                     frameBytes = glReadPixels(0, 0, sensor_width, sensor_height, GL_RGB, GL_UNSIGNED_BYTE, None)
                     result = Image.frombuffer("RGB", (sensor_width, sensor_height), frameBytes, "raw", "RGB", 0, 1)
                     result = ImageOps.flip(result)

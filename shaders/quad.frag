@@ -1,4 +1,5 @@
 #version 430 core
+
 layout(location = 0) out vec4 color;
 
 in vec2 vTexCoord;
@@ -30,55 +31,52 @@ uniform float far;
 
 uniform vec2 overscanResolution;
 
-vec2 applyInverseDistortionOld(vec2 uvDistorted) {
-    // This function iteratively finds the undistorted coordinate
-    // that would produce the given distorted coordinate
+vec2 applyInverseDistortion(vec2 distorted) {
 
-    vec2 imageSize = vec2(resolution_width, resolution_height);
+    vec2 resolution = vec2(resolution_width, resolution_width);
+    vec2 imageCenter = resolution * 0.5;
+    float normalizer = max(resolution.x, resolution.y);
+
     vec2 principalPoint = vec2(resolution_width/2.0f + cx, resolution_width/2.0f - cy);
+    vec2 centered = (distorted - principalPoint) / normalizer;
+    vec2 normalized = centered / (f / normalizer);
 
-    vec2 pixelDistorted = uvDistorted * imageSize;
-    vec2 normalizedDistorted = (pixelDistorted - principalPoint) / f;
+    vec2 undistorted = normalized;
 
-    // Initial guess: undistorted = distorted
-    vec2 normalizedUndistorted = normalizedDistorted;
-    normalizedUndistorted.y = -normalizedDistorted.y;
+    for(int i = 0; i < 8; i++) {  // More iterations
+        float x = undistorted.x;
+        float y = undistorted.y;
 
-    // Iterate to find the inverse (usually converges in 3-5 iterations)
-    for (int i = 0; i < 16; i++) {
-        float x = normalizedUndistorted.x;
-        float y = normalizedUndistorted.y;
+        // Compute r2 carefully to avoid precision loss
+        float xx = x * x;
+        float yy = y * y;
+        float r2 = xx + yy;
 
-        float r2 = x*x + y*y;
-        float r4 = r2 * r2;
-        float r6 = r4 * r2;
+        // Use Horner's method for polynomial evaluation (more stable)
+        float radial = 1.0 + r2 * (k1 + r2 * (k2 + r2 * k3));
 
-        float A = 1.0 + k1*r2 + k2*r4 + k3*r6;
+        // Tangential distortion
+        float xy = x * y;
+        vec2 tangential;
+        tangential.x = 2.0 * p1 * xy + p2 * (r2 + 2.0 * xx);
+        tangential.y = p1 * (r2 + 2.0 * yy) + 2.0 * p2 * xy;
 
-        float xp = x * A + (p1*(r2 + 2.0*x*x) + 2.0*p2*x*y);
-        float yp = y * A + (p2*(r2 + 2.0*y*y) + 2.0*p1*x*y);
+        // Affinity
+        float affinity_x = b1 * x + b2 * y; //Se non uso b1 e b2 e' molto piu' accurato (rispetto alla foto)
 
-        // Compute error
-        vec2 error = vec2(xp, yp) - normalizedDistorted;
+        // Complete model
+        vec2 distorted_estimate;
+        distorted_estimate.x = x * radial + tangential.x + affinity_x;
+        distorted_estimate.y = y * radial + tangential.y;
 
-        // Update estimate
-        normalizedUndistorted -= error;
+        vec2 error = normalized - distorted_estimate;
+        undistorted += error * 0.3;  // Reduced from 0.5
     }
 
-    // Convert back to UV
-    vec2 pixelUndistorted = normalizedUndistorted * f + principalPoint;
-    return pixelUndistorted / imageSize;
-}
+    // Convert back to pixel coordinates
+    return undistorted * (f / normalizer) * normalizer + principalPoint;
 
-vec2 applyAffinityDistortion(vec2 point, float b1, float b2) {
-    // This models sensor skew and scale differences
-    vec2 result;
-    result.x = b1 * point.x + b2 * point.y;
-    result.y = point.y;
-    return result;
-}
-
-vec2 applyInverseDistortion(vec2 distorted) {
+    /* LESS NUMERICALY STABLE VERSION ----------------------------------------------------------------
     // Convert from pixel to normalized coordinates
     vec2 principalPoint = vec2(resolution_width/2.0f + cx, resolution_width/2.0f - cy);
     vec2 centered = distorted - principalPoint;
@@ -115,31 +113,13 @@ vec2 applyInverseDistortion(vec2 distorted) {
 
         vec2 error = normalized - distorted_estimate;
         undistorted += error * 0.5;
-
-        /*
-        float r2 = dot(undistorted, undistorted);
-        float r4 = r2 * r2;
-        float r6 = r4 * r2;
-
-        float radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6;
-
-        vec2 tangential;
-        tangential.x = 2.0 * p1 * undistorted.x * undistorted.y +
-                       p2 * (r2 + 2.0 * undistorted.x * undistorted.x);
-        tangential.y = p1 * (r2 + 2.0 * undistorted.y * undistorted.y) +
-                       2.0 * p2 * undistorted.x * undistorted.y;
-
-
-        vec2 distorted_estimate = undistorted * radial + tangential;
-        vec2 error = normalized - distorted_estimate;
-
-        undistorted += error * 0.5;
-        */
     }
 
     // Convert back to pixel coordinates
     return undistorted * f + principalPoint;
+    */
 }
+
 void main()
 {
     vec2 principalPoint = vec2(resolution_width/2.0f + cx, resolution_width/2.0f - cy);

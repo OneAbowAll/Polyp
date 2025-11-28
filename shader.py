@@ -1,5 +1,9 @@
 import os
+
+import OpenGL.platform
 import glm
+import ctypes as ct
+
 from OpenGL.GL import glGetUniformLocation, glUniform1i, glUniform1f, glUniform3f, glUniformMatrix4fv, GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_FALSE
 from OpenGL.GL.shaders import compileProgram, compileShader
 from OpenGL.raw.GL.VERSION.GL_2_0 import glUniform2f
