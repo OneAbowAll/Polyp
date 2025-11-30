@@ -31,28 +31,86 @@ uniform float far;
 
 uniform vec2 overscanResolution;
 
-vec2 applyInverseDistortion(vec2 distorted) {
+// Helper function for the weights
+vec4 cubic(float v) {
+    vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
+    vec4 s = n * n * n;
+    float x = s.x;
+    float y = s.y - 4.0 * s.x;
+    float z = s.z - 4.0 * s.y + 6.0 * s.x;
+    float w = 6.0 - x - y - z;
+    return vec4(x, y, z, w) * (1.0/6.0);
+}
 
-    vec2 resolution = vec2(resolution_width, resolution_width);
-    vec2 imageCenter = resolution * 0.5;
+//In teoria usare un sampling bicubico dovrerbbe portare a un risultato piu' accurato (nei miei test e' una differenza minima)
+//Ma nel mio caso d'uso non ha senso, le label sono delle maschere in un certo senso.
+vec4 textureBicubic(sampler2D sampler, vec2 texCoords) {
+    // 1. Get the size of the texture (Overscan resolution in your case)
+    vec2 texSize = vec2(textureSize(sampler, 0));
+    vec2 invTexSize = 1.0 / texSize;
+
+    // 2. Calculate pixel coordinates
+    texCoords = texCoords * texSize - 0.5;
+
+    // 3. Separate integer and fractional parts
+    vec2 fxy = fract(texCoords);
+    texCoords -= fxy;
+
+    // 4. Calculate the weights for the X and Y axis
+    vec4 xcubic = cubic(fxy.x);
+    vec4 ycubic = cubic(fxy.y);
+
+    // 5. Calculate the offsets for the 4 combined samples
+    // This is a "GPU Trick": instead of sampling 16 pixels individually,
+    // we sample 4 locations using linear interpolation to mathematically
+    // approximate the 16-sample sum.
+    vec4 c = texCoords.xxyy + vec2(-0.5, +1.5).xyxy;
+
+    vec4 s = vec4(xcubic.xz + xcubic.yw, ycubic.xz + ycubic.yw);
+    vec4 offset = c + vec4(xcubic.yw, ycubic.yw) / s;
+
+    offset *= invTexSize.xxyy;
+
+    // 6. Sample the texture 4 times
+    vec4 sample0 = texture(sampler, offset.xz);
+    vec4 sample1 = texture(sampler, offset.yz);
+    vec4 sample2 = texture(sampler, offset.xw);
+    vec4 sample3 = texture(sampler, offset.yw);
+
+    // 7. Combine the samples
+    float sx = s.x / (s.x + s.y);
+    float sy = s.z / (s.z + s.w);
+
+    return mix(
+       mix(sample3, sample2, sx),
+       mix(sample1, sample0, sx),
+       sy
+    );
+}
+
+vec2 applyInverseDistortion(vec2 distorted)
+{
+    vec2 resolution = vec2(resolution_width, resolution_height);
     float normalizer = max(resolution.x, resolution.y);
 
-    vec2 principalPoint = vec2(resolution_width/2.0f + cx, resolution_width/2.0f - cy);
+    //Metashape usa le cordinate per la y inverse, questo e' il punto fisico del sensore da quel che ho capito
+    vec2 principalPoint = vec2(resolution_width/2.0f + cx, resolution_height/2.0f - cy);
     vec2 centered = (distorted - principalPoint) / normalizer;
     vec2 normalized = centered / (f / normalizer);
 
     vec2 undistorted = normalized;
 
-    for(int i = 0; i < 8; i++) {  // More iterations
+    //Itera per trovare la distorsione inversa
+    for(int i = 0; i < 10; i++) {
         float x = undistorted.x;
         float y = undistorted.y;
 
-        // Compute r2 carefully to avoid precision loss
+        //In teoria questa e' per avere meno perdita di precisione
         float xx = x * x;
         float yy = y * y;
         float r2 = xx + yy;
 
-        // Use Horner's method for polynomial evaluation (more stable)
+        //Anche questo come sopra
         float radial = 1.0 + r2 * (k1 + r2 * (k2 + r2 * k3));
 
         // Tangential distortion
@@ -62,18 +120,19 @@ vec2 applyInverseDistortion(vec2 distorted) {
         tangential.y = p1 * (r2 + 2.0 * yy) + 2.0 * p2 * xy;
 
         // Affinity
-        float affinity_x = b1 * x + b2 * y; //Se non uso b1 e b2 e' molto piu' accurato (rispetto alla foto)
+        float affinity_x = (b1 * x) + (b2 * y); //Se non uso b1 e b2 (nella shader) e' molto piu' accurato (rispetto alla foto)
 
-        // Complete model
+        //Stima
         vec2 distorted_estimate;
-        distorted_estimate.x = x * radial + tangential.x + affinity_x;
-        distorted_estimate.y = y * radial + tangential.y;
+        distorted_estimate.x = (x * radial) + tangential.x + affinity_x;
+        distorted_estimate.y = (y * radial) + tangential.y;
 
+        //Correggi la stima, in teoria piu' passi vengono fatti e meno ci muoviamo meglio e' (devo ripassare calcolo numerico per confermarlo)
         vec2 error = normalized - distorted_estimate;
-        undistorted += error * 0.3;  // Reduced from 0.5
+        undistorted += error * 0.3;
     }
 
-    // Convert back to pixel coordinates
+    //Passa a coordinate pixel
     return undistorted * (f / normalizer) * normalizer + principalPoint;
 
     /* LESS NUMERICALY STABLE VERSION ----------------------------------------------------------------
@@ -122,7 +181,8 @@ vec2 applyInverseDistortion(vec2 distorted) {
 
 void main()
 {
-    vec2 principalPoint = vec2(resolution_width/2.0f + cx, resolution_width/2.0f - cy);
+    //Centro reale del sensore
+    vec2 principalPoint = vec2(resolution_width/2.0f + cx, resolution_height/2.0f - cy);
 
     // Current pixel in output image (sensor resolution)
     vec2 pixelPos = vTexCoord * vec2(resolution_width, resolution_height);
@@ -130,34 +190,24 @@ void main()
     // Apply inverse distortion to find source pixel
     vec2 undistortedPixel = applyInverseDistortion(pixelPos);
 
-    // Map to overscan texture coordinates
-    // Account for the fact that overscan has a wider FOV
-    vec2 overscanCenter = overscanResolution * 0.5;
-    vec2 sensorCenter = vec2(resolution_width, resolution_height) * 0.5;
+    //Scala il PP per trovare il PP nell' overscan
+    vec2 overscanScale = overscanResolution / vec2(resolution_width, resolution_height);
+    vec2 principalPointOverscan = principalPoint * overscanScale;
 
-    // Map from sensor space to overscan space
-    // The pixel offset from center remains the same, but we need to account for the larger texture
-    vec2 offsetFromCenter = undistortedPixel - sensorCenter;
-    vec2 overscanPixel = overscanCenter + offsetFromCenter;
+    //E' l'offset dal centro fisico reale
+    vec2 vectorFromCenter = undistortedPixel - principalPoint;
 
-    // Convert to texture coordinates [0, 1]
+    //Trova il pixel nellp "spazio" dell'overscan
+    vec2 overscanPixel = principalPointOverscan + vectorFromCenter;
+
+    //Convert to texture coordinates [0, 1]
     vec2 sourceTexCoord = overscanPixel / overscanResolution;
 
-    // Sample with boundary check
+    //Sample with boundary check
     if (sourceTexCoord.x >= 0.0 && sourceTexCoord.x <= 1.0 &&
         sourceTexCoord.y >= 0.0 && sourceTexCoord.y <= 1.0) {
         color = texture(screenTex, sourceTexCoord);
     } else {
-        color = vec4(0.0, 0.0, 0.0, 1.0);  // Black for out-of-bounds
-    }
-    /*
-    vec2 undistortedUV = applyInverseDistortion(vTexCoord);
-
-    if (undistortedUV.x < 0.0 || undistortedUV.x > 1.0 ||
-        undistortedUV.y < 0.0 || undistortedUV.y > 1.0) {
         color = vec4(0.0, 0.0, 0.0, 1.0);
-    } else {
-        color = texture(screenTex, undistortedUV);
     }
-    */
 }

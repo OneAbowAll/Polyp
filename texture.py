@@ -2,7 +2,7 @@ import OpenGL.GL as gl
 from PIL import Image
 import numpy as np
 
-def load_texture(image_path, filterType):
+def load_texture(image_path, filterType, mipmap = True):
     """
     Load a JPEG image and set it as a texture in PyOpenGL.
     
@@ -51,7 +51,8 @@ def load_texture(image_path, filterType):
     gl.glGenerateMipmap(gl.GL_TEXTURE_2D)
 
     # Unbind the texture
-    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+    if mipmap:
+        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
 
     del image_data
 

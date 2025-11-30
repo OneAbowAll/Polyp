@@ -1,28 +1,26 @@
 import math
 import os
 import sys
+from enum import IntEnum
 
-import PIL.Image
-from PIL import Image, ImageOps
 import pygame
 import pymeshlab
-import numpy as np
-from enum import Enum, IntEnum
-from OpenGL.GL import *
+from PIL import Image, ImageOps
 
 from pyglm import glm
+
 import imgui
 from imgui.integrations.pygame import PygameRenderer
 
-import arcball
-
-from debug_draw import draw_box
 import log
+import debug_draw
 import shader
 import texture
-import metashape_loader
 from fbo import Fbo
 from renderable import *
+
+import arcball
+import metashape_loader
 
 class RenderMode(IntEnum):
     LABEL_ONLY = 0
@@ -261,6 +259,8 @@ def set_sensor(shader: shader.Shader, sensor, overscanFactor = 1.2):
     shader.set_float("k3", float(sensor.calibration["k3"]))
     shader.set_float("p1", float(sensor.calibration["p1"]))
     shader.set_float("p2", float(sensor.calibration["p2"]))
+    shader.set_float("b1", 0) #Se li riaggiungo non matcha per nulla
+    shader.set_float("b2", 0)
 
     overscan_width = int(sensor.resolution["width"] * overscanFactor)
     overscan_height = int(sensor.resolution["height"] * overscanFactor)
@@ -274,97 +274,20 @@ def build_proj_matrix(sensor, near = 1.0, far = 100.0, overscan_factor=1.2):
     cx = (sensor.resolution["width"] / 2.0 + sensor.calibration["cx"]) * overscan_factor
     cy = (sensor.resolution["height"] / 2.0 - sensor.calibration["cy"]) * overscan_factor
 
-    fx = f + sensor.calibration["b1"]
-    s = sensor.calibration["b2"]
-
-
+    fx = f + sensor.calibration["b1"] #Ho fatto un po' di test se lo includo qui ho un match migliore
     return glm.mat4(
-        2 * f / w, 0, 0, 0,
+        2 * fx / w, 0, 0, 0,
         0, 2 * f / h, 0, 0,
         (w - 2 * cx) / w, (h - 2 * cy) / h, -(far + near) / (far - near), -1,
         0, 0, -2 * far * near / (far - near), 0
     )
 
-    proj = glm.mat4(
-        glm.vec4(2 * fx / w, 2 * s / w, 2 * (cx / w) - 1, 0),
-        glm.vec4(0, 2 * f / h, 2 * (cy / h) - 1, 0),
-        glm.vec4(0, 0, -(far + near) / (far - near), -2 * far * near / (far - near)),
-        glm.vec4(0, 0, -1, 0)
-    )
-    return glm.transpose(proj)
-
-def render_from_camera(sensor, render_shader, distortion_shader, renderable, screen_quad, ortoProj, ortoView, overscanFactor):
-    """
-    Disegna il renderable applicando una distorsione della lente con i settings di calibrazione in sensor.
-    !!! ATTENZIONE !!!
-    Quando si usa questa funzione bisogna settare prima:
-        -uProj, uView, uColorTex e la uLabelMap
-
-    Inoltre la render_mode deve essere settata anchessa prima.
-    """
-
-    #Prendi le dimensioni del viewport prima di cambiarle
-    viewport = glGetIntegerv(GL_VIEWPORT)
-    old_width = viewport[2]
-    old_height = viewport[3]
-
-    sensor_width = sensor.resolution["width"]
-    sensor_height = sensor.resolution["height"]
-    overscan_width = int(sensor_width * overscanFactor)
-    overscan_height = int(sensor_height * overscanFactor)
-
-    OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
-    SAVE_FBO = Fbo(sensor_width, sensor_height)
-
-    # Disegna il modello sul framebuffer con dell'overscan
-    glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
-    glViewport(0, 0, overscan_width, overscan_height)
-
-    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
-    glEnable(GL_DEPTH_TEST)
-
-    glUseProgram(render_shader.program)
-    render_shader.set_int("uViewMode", ViewMode.CAMERA)
-
-    render_shader.set_mat4("uOrthoProj",  ortoProj)
-    render_shader.set_mat4("uOrthoView",  ortoView)
-
-    glBindVertexArray(renderable.vao)
-    glDrawArrays(GL_TRIANGLES, 0, renderable.n_faces * 3)
-    glBindVertexArray(0)
-    glUseProgram(0)
-
-    # Applica il post processing sulla texture del framebuffer
-    glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
-    glViewport(0, 0, sensor_width, sensor_height)
-
-    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
-    glDisable(GL_DEPTH_TEST)
-
-    glUseProgram(distortion_shader.program)
-    set_sensor(distortion_shader, sensor, overscanFactor)
-    glBindVertexArray(screen_quad)
-
-    glActiveTexture(GL_TEXTURE0)
-    glBindTexture(GL_TEXTURE_2D, OVERSCAN_FBO.id_color)
-    glDrawArrays(GL_TRIANGLES, 0, 6)
-
-    glBindVertexArray(0)
-
-    #Riporta allo stato precedente
-    glUseProgram(0)
-    glBindFramebuffer(GL_FRAMEBUFFER, 0)
-    glViewport(0, 0, old_width, old_height)
-    glEnable(GL_DEPTH_TEST)
-
-    return SAVE_FBO
-
 def main():
     glm.silence(4)
-    PIL.Image.MAX_IMAGE_PIXELS = 181159576
+    Image.MAX_IMAGE_PIXELS = 181159576
 
     #Window context variables
-    W, H = 1200, 800
+    W, H = 1350, 900
     SCREEN = None
     CLOCK = None
     DELTA_TIME = 0
@@ -437,7 +360,7 @@ def main():
     chunk_matrix : glm.mat4x4 = chunk_tra_matrix * chunk_sca_matrix * chunk_rot_matrix
     
     #Camera
-    projection_matrix = glm.perspective(glm.radians(45), W/H,0.0001,100)
+    projection_matrix = glm.perspective(glm.radians(45), W / H, 0.0001, 100)
 
     arcBall = arcball.ArcballCamera(W, H)
     center = (bbox_min+bbox_max)/2.0
@@ -453,18 +376,19 @@ def main():
 
     ortho_proj: glm.mat4 = glm.ortho(-2.7859610141394064, 2.8135035058605933, -2.365373768699055, 2.3856638113009452, 0.01, 10) #ortho.extents
     
-    ortho_center =  glm.vec3(5.0721218747120318  , 0.3702069405071875 , -7.9174685381193006 ) #? #ortho.projection.translation
+    ortho_center =  glm.vec3(5.0721218747120318, 0.3702069405071875, -7.9174685381193006) #? #ortho.projection.translation
     ortho_view = glm.lookAt(ortho_center + glm.vec3(0, 0, 1), ortho_center, glm.vec3(0, 1, 0))
 
     #Calculate all camera matrices
     camera_matrices : list[glm.mat4x4] = [glm.mat4] * len(cameras)
     for i in range(0, len(cameras)):
-        camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform)) * glm.rotate(glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))
+        camera_matrices[i] = chunk_matrix * glm.transpose(glm.mat4(*cameras[i].transform)) * glm.rotate(
+            glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))
 
     """* glm.rotate(glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))"""
 
     #Import Label map
-    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST)
+    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST, False)
 
     #Application settings
     view_mode = ViewMode.ORTHO
@@ -475,8 +399,8 @@ def main():
     show_camera_frames = True
     show_debug = True
 
-    OVERSCAN = 1
-    MAX_CAMERA = 20 #There are more than 300 cameras view to render, for debugging we can stop sooner
+    OVERSCAN = 1.2
+    MAX_CAMERA = math.inf #There are more than 300 cameras view to render, for debugging we can stop sooner
     
     #Set first sensor
     glUseProgram(SHADER_QUAD.program)
@@ -558,10 +482,10 @@ def main():
                     show_camera_frames = False  #Se vai in modalita' metaashape-camera nascondi in automatico i camera frames
 
                 if selected_camera_id_changed:
-                    selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras)-1)
+                    selected_camera_id = glm.clamp(selected_camera_id, 0, len(cameras) - 1)
 
                     glUseProgram(SHADER_QUAD.program)
-                    set_sensor(SHADER_MAIN, sensors[cameras[selected_camera_id].sensor_id])
+                    set_sensor(SHADER_QUAD, sensors[cameras[selected_camera_id].sensor_id])
                     glUseProgram(0)
 
                 if imgui.button("Render all pseudo-labels"):
@@ -570,7 +494,7 @@ def main():
                     SHADER_MAIN.set_mat4("uModel", glm.mat4(1))
                     glUseProgram(0)
 
-                    length = min(MAX_CAMERA, len(cameras))
+                    length = max(0, min(MAX_CAMERA, len(cameras)))
                     print("Rendering Pseudo-Labels...")
                     print(f"{0}/{length} rendered.")
                     for i in range(0, length):
@@ -581,8 +505,8 @@ def main():
                         overscan_width = int(sensor_width * OVERSCAN)
                         overscan_height = int(sensor_height * OVERSCAN)
 
-                        OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
-                        SAVE_FBO = Fbo(sensor_width, sensor_height)
+                        OVERSCAN_FBO = Fbo(overscan_width, overscan_height, GL_NEAREST)
+                        SAVE_FBO = Fbo(sensor_width, sensor_height, GL_NEAREST)
 
                         # Disegna il modello sul framebuffer con dell'overscan
                         glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
@@ -651,8 +575,8 @@ def main():
                     overscan_width = int(sensor_width * OVERSCAN)
                     overscan_height = int(sensor_height * OVERSCAN)
 
-                    OVERSCAN_FBO = Fbo(overscan_width, overscan_height)
-                    SAVE_FBO = Fbo(sensor_width, sensor_height)
+                    OVERSCAN_FBO = Fbo(overscan_width, overscan_height, GL_NEAREST)
+                    SAVE_FBO = Fbo(sensor_width, sensor_height, GL_NEAREST)
 
                     # Disegna il modello sul framebuffer con dell'overscan
                     glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
@@ -799,7 +723,7 @@ def main():
 
         if show_debug:
             SHADER_FRAME.set_mat4("uModel", glm.inverse(ortho_view) * glm.inverse(ortho_proj)) # type: ignore
-            draw_box(glm.vec3(0), glm.vec3(2))
+            debug_draw.draw_box(glm.vec3(0), glm.vec3(2))
 
         SHADER_FRAME.set_mat4("uModel", center_frame_matrix)
         glBindVertexArray(camera_frame_vao)
@@ -814,7 +738,7 @@ def main():
             glDrawArrays(GL_LINES, 0, 6)
 
             SHADER_FRAME.set_mat4("uModel", (camera_matrices[selected_camera_id]) * glm.inverse(build_proj_matrix(sensors[cameras[selected_camera_id].sensor_id]))) # type: ignore
-            draw_box(glm.vec3(0), glm.vec3(2))
+            debug_draw.draw_box(glm.vec3(0), glm.vec3(2))
             """
             for i in range(0,len(cameras)):
                 SHADER_FRAME.set_mat4("uModel", camera_matrices[i])

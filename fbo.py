@@ -3,9 +3,10 @@ from OpenGL.raw.GL.NV.packed_depth_stencil import GL_DEPTH_STENCIL_NV
 
 
 class Fbo:
-    def __init__(self, w, h):
+    def __init__(self, w, h, sample_type = GL_LINEAR):
         self.w = w
         self.h = h
+        self.sample_type = sample_type
 
         self.id_fbo = -1
         self.id_color = -1
@@ -31,8 +32,8 @@ class Fbo:
         self.id_color = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, self.id_color)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, None)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, self.sample_type)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, self.sample_type)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 

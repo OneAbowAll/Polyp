@@ -38,8 +38,7 @@ ORTO-COSE:
 
 
 PSEUDOLABELS:
-    []Ottieni lista immagini(?)
-    []Troppi valori magici, trovare un modo per ricavarli da file.
+    [] Aggiungere un offset manuale che si va ad aggiungere a cy per migliorare la sovrapposizione tra rendere e foto reale.
 
 
 

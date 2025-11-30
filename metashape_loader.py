@@ -48,8 +48,8 @@ class Sensor:
             self.calibration["k3"],  # Radial distortion k3
             self.calibration["p1"],  # Tangential distortion p1
             self.calibration["p2"],  # Tangential distortion p2
-            self.calibration["b1"],  # ??
-            self.calibration["b2"],  # ??
+            self.calibration["b1"],  # Affinity
+            self.calibration["b2"],  # Skew
         ]
         
         # Flatten the covariance coefficients (assuming there are 24 values)
@@ -201,7 +201,7 @@ def load_sensor_from_xml(file_path):
             sensor.calibration["resolution"]["width"] = int(resolution_elem.get("width"))
             sensor.calibration["resolution"]["height"] = int(resolution_elem.get("height"))
         
-        for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2"]:
+        for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2", "b1", "b2"]:
             field_elem = calibration_elem.find(field)
             if field_elem is not None:
                 sensor.calibration[field] = float(field_elem.text)
