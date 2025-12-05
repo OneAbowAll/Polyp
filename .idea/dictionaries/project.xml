@@ -2,6 +2,7 @@
   <dictionary name="project">
     <words>
       <w>inds</w>
+      <w>psuedolabel</w>
       <w>tcoord</w>
       <w>verts</w>
       <w>xoffset</w>
