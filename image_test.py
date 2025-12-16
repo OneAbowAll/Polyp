@@ -12,7 +12,7 @@ import PIL.Image as Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pygame import Color
-from skimage.color import label2rgb
+from skimage.color import label2rgb, rgb2gray, gray2rgb
 
 from skimage.io import imread
 
@@ -184,7 +184,7 @@ if __name__ == '__main__':
                     mouseX, mouseY = event.pos
                     negative_points.append((mouseY - img_rect[1], mouseX - img_rect[0]))
 
-                result = regGenerator.generateSegmentationFromClicks(real_image, label_image, region, positive_points, negative_points)
+                result = regGenerator.generateSegmentationFromClicks(real_image, cropped, region, positive_points, negative_points)
                 base_texture = pygame.image.frombytes(result.tobytes(), pil_image.size, "RGB")
 
             if event.type == pygame.KEYDOWN:

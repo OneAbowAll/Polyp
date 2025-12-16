@@ -25,7 +25,7 @@ def getRegions(image):
     result: dict[int, Region] = {}
     regions = regionprops(label_map)
 
-    padding_amount = 10
+    padding_amount = 20
     for region in regions:
         if region.area > 200:
             [minY, minX, maxY, maxX] = region.bbox
@@ -35,6 +35,6 @@ def getRegions(image):
                 min(maxY + padding_amount, image.shape[0]-1),
                 min(maxX + padding_amount, image.shape[1]-1)
             )
-            result[region.label] = Region(region.label, newBbox)
+            result[region.label] = Region(region.label, padding_amount, newBbox)
 
     return label_map, result

@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from jinja2.compiler import generate
 from mpmath.math2 import sqrt2
 from pyglm.glm import clamp
+from skimage.color import rgb2gray, gray2rgb
 
 import log
 from models.isegm.inference import clicker
@@ -51,20 +52,26 @@ class RegionGenerator:
         regions = regionMap.getRegions()
         ritm_clicker = clicker.Clicker()  # handles clicked point (original code of ritm)
 
+        result = regionMap.image.copy()
+        result_accumulate = regionMap.image.copy()
+
         for region in regions:
+            log.print_info(f"Segmenting Region_Id: {region.id}...")
             #Crop image to region
             cropped = regionMap.extractFromImage(region.id)
             distance_mask = regionMap.generateSDF(region.id)
+            accumulate_mask = np.zeros((cropped.shape[0], cropped.shape[1]), dtype=np.uint8)
 
             self.predictor.set_input_image(cropped)
 
             init_mask = None
 
             for k in range(10):
-                positives = self.generatePositivePoints(distance_mask, region,3)
 
                 main_size = max(region.height, region.width)
-                negatives = self.generateNegativePoints(distance_mask, region,3, main_size/4)
+                #TODO: i positive points devono essere spreaddati, in qualche modo
+                positives = self.generatePositivePoints(distance_mask, region,4, main_size/20)
+                negatives = self.generateNegativePoints(distance_mask, region,6, main_size/6)
 
                 for p in positives:
                     click = clicker.Click(is_positive=True, coords=p)
@@ -83,7 +90,14 @@ class RegionGenerator:
                 output[segm_mask, 1] = 255
                 output[segm_mask, 2] = 255
 
+                accumulate_mask[segm_mask] += 1
+
                 pil_img2 = Image.fromarray(output)
+
+                [minY, minX, maxY, maxX] = region.bbox
+                result[minY:maxY, minX:maxX][segm_mask, 0] = random.randint(0, 255)
+                result[minY:maxY, minX:maxX][segm_mask, 1] = random.randint(0, 255)
+                result[minY:maxY, minX:maxX][segm_mask, 2] = random.randint(0, 255)
 
                 # drawing context TODO: REMOVE THIS OR MAKE IT OPTIONAL FOR DEBUGGING
                 draw = ImageDraw.Draw(pil_img2)
@@ -106,6 +120,26 @@ class RegionGenerator:
 
                 # reset clicks
                 ritm_clicker.reset_clicks()
+
+            average = cropped.copy()
+            final_mask = accumulate_mask > 2
+            average[final_mask, 0] = 255
+            average[final_mask, 1] = 255
+            average[final_mask, 2] = 255
+            pil_img2 = Image.fromarray(average)
+            pil_img2.save(rf"S:\ritm_output\{region.id}\average.png")
+
+            [minY, minX, maxY, maxX] = region.bbox
+            result_accumulate[minY:maxY, minX:maxX][final_mask, 0] = random.randint(0, 255)
+            result_accumulate[minY:maxY, minX:maxX][final_mask, 1] = random.randint(0, 255)
+            result_accumulate[minY:maxY, minX:maxX][final_mask, 2] = random.randint(0, 255)
+
+
+        result_image = Image.fromarray(result)
+        result_image.save(r"S:\ritm_output\complete.png")
+
+        pil_img2 = Image.fromarray(result_accumulate)
+        pil_img2.save(rf"S:\ritm_output\result_accumulate.png")
 
     def generatePositivePoints(self, distance_map, region:Region, amount, minDistance = 0):
         result = []
@@ -150,6 +184,10 @@ class RegionGenerator:
                         ok = False
                         break
 
+                    if distance_map[p]>15:
+                        ok = False
+                        break
+
                 if ok:
                     result.append(p)
 
@@ -177,13 +215,13 @@ class RegionGenerator:
 
         return p
 
-    def generateSegmentationFromClicks(self, image, label_map, region, positive :list[Tuple[int, int]], negative :list[Tuple[int, int]]):
+    def generateSegmentationFromClicks(self, image, edited, region, positive :list[Tuple[int, int]], negative :list[Tuple[int, int]]):
         [minY, minX, maxY, maxX] = region.bbox
 
         #Crop image to region
         cropped = image[minY:maxY, minX:maxX]
 
-        self.predictor.set_input_image(cropped)
+        self.predictor.set_input_image(edited)
 
         init_mask = None
         ritm_clicker = clicker.Clicker()  # handles clicked point (original code of ritm)
