@@ -18,11 +18,18 @@ class RegionMap:
         return self.regions[region_id]
 
     def extractFromImage(self, region_id):
+        """
+        Estrai dalla foto originale una regione
+        """
         region = self.regions[region_id]
         [minY, minX, maxY, maxX] = region.bbox
         return self.image[minY:maxY, minX:maxX].copy()
 
     def extractMask(self, region_id):
+        """
+        Estrai dalla pseudo_label la maschera della region con id = region_id.
+        Se nella region e' presente un altra maschera con id diverso questa verra' esclusa.
+        """
         region = self.regions[region_id]
         [minY, minX, maxY, maxX] = region.bbox
         cropped = self.label_map[minY:maxY, minX:maxX].copy()

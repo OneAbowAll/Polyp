@@ -388,7 +388,7 @@ def main():
     """* glm.rotate(glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))"""
 
     #Import Label map
-    label_map, _, _ = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST, False)
+    label_map, label_width, label_height = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST, False)
 
     #Application settings
     view_mode = ViewMode.ORTHO
@@ -419,7 +419,32 @@ def main():
 
     log.WARNING_LOG_ENABLED = False
 
-    RENDER_FBO = Fbo(W, H)
+    ORTHO_FBO = Fbo(label_width, label_height, depthAsTexture=True) #TODO: Il color component in teoria non mi serve
+    RENDER_FBO = Fbo(W, H, depthAsTexture=True)
+
+    #Renderizza la orto immagine una volta, verra' poi riutilizzata per "spalmare" la label map correttamente
+    glViewport(0, 0, label_width, label_height)
+    glBindFramebuffer(GL_FRAMEBUFFER, ORTHO_FBO.id_fbo)
+    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+    glEnable(GL_DEPTH_TEST)
+
+    # Setta le shader necessarie ------------------------------
+    glUseProgram(SHADER_MAIN.program)
+    SHADER_MAIN.set_int("uViewMode", ViewMode.ORTHO)
+    SHADER_MAIN.set_int("uRenderMode", RenderMode.TEXTURE_ONLY)
+    SHADER_MAIN.set_mat4("uProj", ortho_proj)
+    SHADER_MAIN.set_mat4("uView", ortho_view)
+    SHADER_MAIN.set_mat4("uModel", glm.mat4(1.0))
+
+    # Render the actual renderable obj off-screen -------------
+    glBindVertexArray(rend.vao)
+    glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
+    glBindVertexArray(0)
+
+    # Reset ---------------------------------------------------
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    glUseProgram(0)
+    glViewport(0, 0, W, H)
 
     while running:
         glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
@@ -525,6 +550,10 @@ def main():
                         glBindTexture(GL_TEXTURE_2D, label_map)
                         SHADER_MAIN.set_int("uLabelMap", 1)
 
+                        glActiveTexture(GL_TEXTURE2)
+                        glBindTexture(GL_TEXTURE_2D, ORTHO_FBO.id_depth)
+                        SHADER_MAIN.set_int("uDepthTex", 2)
+
                         SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensor, OVERSCAN))
                         SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[i]))
 
@@ -594,6 +623,10 @@ def main():
                     glActiveTexture(GL_TEXTURE1)
                     glBindTexture(GL_TEXTURE_2D, label_map)
                     SHADER_MAIN.set_int("uLabelMap", 1)
+
+                    glActiveTexture(GL_TEXTURE2)
+                    glBindTexture(GL_TEXTURE_2D, ORTHO_FBO.id_depth)
+                    SHADER_MAIN.set_int("uDepthTex", 2)
 
                     SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensor, OVERSCAN))
                     SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[selected_camera_id]))
@@ -679,6 +712,10 @@ def main():
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D, label_map)
         SHADER_MAIN.set_int("uLabelMap", 1)
+
+        glActiveTexture(GL_TEXTURE2)
+        glBindTexture(GL_TEXTURE_2D, ORTHO_FBO.id_depth)
+        SHADER_MAIN.set_int("uDepthTex", 2)
 
         if view_mode == ViewMode.CAMERA:
             glBindFramebuffer(GL_FRAMEBUFFER, RENDER_FBO.id_fbo)

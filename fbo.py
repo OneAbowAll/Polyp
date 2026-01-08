@@ -3,26 +3,28 @@ from OpenGL.raw.GL.NV.packed_depth_stencil import GL_DEPTH_STENCIL_NV
 
 
 class Fbo:
-    def __init__(self, w, h, sample_type = GL_LINEAR):
+    def __init__(self, w, h, sample_type = GL_LINEAR, depthAsTexture = False):
         self.w = w
         self.h = h
         self.sample_type = sample_type
+        self.depthAsTexture = depthAsTexture
 
         self.id_fbo = -1
         self.id_color = -1
         self.id_depth = -1
         self.create(w, h)
          
-    def create(self,w, h):
+    def create(self, w, h):
         """
         Creates a frame buffer object (FBO) with a float32 texture target.
 
         Parameters:
             w (int): Width of the frame buffer.
             h (int): Height of the frame buffer.
+            depthAsTexture (bool): If True, a texture_2d will be used to store the depth.
 
         Returns:
-            tuple: (framebuffer ID, texture ID, renderbuffer ID)
+            tuple: (framebuffer ID, texture ID, (!depthAsTexture)? renderbuffer ID : texture ID)
         """
         # Generate FBO
         self.id_fbo = glGenFramebuffers(1)
@@ -40,12 +42,24 @@ class Fbo:
         # Attach texture to FBO
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.id_color, 0)
 
-        self.id_depth = glGenRenderbuffers(1)
-        glBindRenderbuffer(GL_RENDERBUFFER, self.id_depth)
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h)
+        if not self.depthAsTexture:
+            self.id_depth = glGenRenderbuffers(1)
+            glBindRenderbuffer(GL_RENDERBUFFER, self.id_depth)
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h)
 
-        # Attach renderbuffer to FBO
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, self.id_depth)
+            # Attach renderbuffer to FBO
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, self.id_depth)
+        else:
+            self.id_depth = glGenTextures(1)
+            glBindTexture(GL_TEXTURE_2D, self.id_depth)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, None)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+
+            # Attach texture to FBO
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT , GL_TEXTURE_2D, self.id_depth, 0)
 
         # Check FBO completeness
         if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:

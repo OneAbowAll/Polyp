@@ -52,11 +52,13 @@ class RegionGenerator:
         regions = regionMap.getRegions()
         ritm_clicker = clicker.Clicker()  # handles clicked point (original code of ritm)
 
-        result = regionMap.image.copy()
+        result_all_segments = regionMap.image.copy()
         result_accumulate = regionMap.image.copy()
 
         for region in regions:
             log.print_info(f"Segmenting Region_Id: {region.id}...")
+            [minY, minX, maxY, maxX] = region.bbox
+
             #Crop image to region
             cropped = regionMap.extractFromImage(region.id)
             distance_mask = regionMap.generateSDF(region.id)
@@ -64,15 +66,24 @@ class RegionGenerator:
 
             self.predictor.set_input_image(cropped)
 
-            init_mask = None
+            #Genera una maschera iniziale che ritm possa usare
+            pseudo_mask = regionMap.extractMask(region.id)
+            init_mask = np.zeros(pseudo_mask.shape, dtype=np.int32)
 
+            init_mask[pseudo_mask > 0] = 1
+            init_mask = init_mask.astype(np.float32)
+            init_mask = torch.from_numpy(init_mask).unsqueeze(0).unsqueeze(0)
+            init_mask = init_mask.to("cuda:0")
+
+            #Genera piu' segmentazioni e salva il risultato nella accumulate_mask
             for k in range(10):
-
                 main_size = max(region.height, region.width)
+
                 #TODO: i positive points devono essere spreaddati, in qualche modo
                 positives = self.generatePositivePoints(distance_mask, region,4, main_size/20)
-                negatives = self.generateNegativePoints(distance_mask, region,6, main_size/6)
+                negatives = self.generateNegativePoints(distance_mask, region,8, main_size/8)
 
+                #Genera i punti
                 for p in positives:
                     click = clicker.Click(is_positive=True, coords=p)
                     ritm_clicker.add_click(click)
@@ -81,27 +92,28 @@ class RegionGenerator:
                     click = clicker.Click(is_positive=False, coords=p)
                     ritm_clicker.add_click(click)
 
+                #Esegui RITM
                 pred = self.predictor.get_prediction(ritm_clicker, prev_mask=init_mask)
-
-                # from prediction to segmentation mask
                 segm_mask = pred > 0.5
+
+                #Accumula segmentazione generata
+                accumulate_mask[segm_mask] += 1
+
+
+                #Disegna la segmentazione sull'immagine originale (anche qui serve per debugging)
+                result_all_segments[minY:maxY, minX:maxX][segm_mask, 0] = random.randint(0, 255)
+                result_all_segments[minY:maxY, minX:maxX][segm_mask, 1] = random.randint(0, 255)
+                result_all_segments[minY:maxY, minX:maxX][segm_mask, 2] = random.randint(0, 255)
+
+                #Porta la prediction in un formato "disegnabile" (principalmente per debugging)
                 output = cropped.copy()
                 output[segm_mask, 0] = 255
                 output[segm_mask, 1] = 255
                 output[segm_mask, 2] = 255
-
-                accumulate_mask[segm_mask] += 1
-
                 pil_img2 = Image.fromarray(output)
 
-                [minY, minX, maxY, maxX] = region.bbox
-                result[minY:maxY, minX:maxX][segm_mask, 0] = random.randint(0, 255)
-                result[minY:maxY, minX:maxX][segm_mask, 1] = random.randint(0, 255)
-                result[minY:maxY, minX:maxX][segm_mask, 2] = random.randint(0, 255)
-
-                # drawing context TODO: REMOVE THIS OR MAKE IT OPTIONAL FOR DEBUGGING
+                #Disegna segmentazione ee punti generati alla k-esima iterazione
                 draw = ImageDraw.Draw(pil_img2)
-
                 for click in ritm_clicker.get_clicks():
                     x = click.coords[1]
                     y = click.coords[0]
@@ -118,24 +130,34 @@ class RegionGenerator:
                 txt = rf"S:\ritm_output\{region.id}\test_{k}.png"
                 pil_img2.save(txt)
 
-                # reset clicks
+                #Reset per la prossima iterazione
                 ritm_clicker.reset_clicks()
 
+            #Usiamo i "voti" delle segmentazioni del ritm per generare una segmentazione adeguata
             average = cropped.copy()
-            final_mask = accumulate_mask > 2
+
+            final_mask = accumulate_mask > 5
             average[final_mask, 0] = 255
             average[final_mask, 1] = 255
             average[final_mask, 2] = 255
+
+            #Salva per dubugging
             pil_img2 = Image.fromarray(average)
             pil_img2.save(rf"S:\ritm_output\{region.id}\average.png")
 
+            #Aggiungi al risultato finale evidenziando le varie segmentazioni
             [minY, minX, maxY, maxX] = region.bbox
-            result_accumulate[minY:maxY, minX:maxX][final_mask, 0] = random.randint(0, 255)
-            result_accumulate[minY:maxY, minX:maxX][final_mask, 1] = random.randint(0, 255)
-            result_accumulate[minY:maxY, minX:maxX][final_mask, 2] = random.randint(0, 255)
+            selection_alpha = 0.6
+            selection_color = np.array([random.randint(1, 255), random.randint(1, 255), random.randint(1, 255)])
+
+            regionOfInterest = result_accumulate[minY:maxY, minX:maxX]
+            originalColor = regionOfInterest[final_mask]
+
+            finalColor = (originalColor*(1-selection_alpha)) + (selection_color*selection_alpha)
+            regionOfInterest[final_mask] = finalColor.astype(np.uint8)
 
 
-        result_image = Image.fromarray(result)
+        result_image = Image.fromarray(result_all_segments)
         result_image.save(r"S:\ritm_output\complete.png")
 
         pil_img2 = Image.fromarray(result_accumulate)
