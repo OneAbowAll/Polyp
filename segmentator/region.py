@@ -11,8 +11,8 @@ class Region:
         self.paddedWidth = self.bbox[3] - self.bbox[1]
         self.paddedHeight = self.bbox[2] - self.bbox[0]
 
-        self.width = self.paddedWidth - padding
-        self.height = self.paddedHeight - padding
+        self.width = self.paddedWidth - 2*padding
+        self.height = self.paddedHeight - 2*padding
 
     def randomPointInRegion(self):
         return random.randint(0, self.bbox[2] - self.bbox[0] - 1), random.randint(0, self.bbox[3] - self.bbox[1] - 1)

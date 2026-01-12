@@ -2,6 +2,8 @@ import os
 import random
 from typing import Tuple
 
+import PIL
+import cv2
 import numpy as np
 import pygame
 import scipy
@@ -21,7 +23,7 @@ import segmentator.regions as regions
 from segmentator.generator import RegionGenerator
 from segmentator.regionmap import RegionMap
 
-label_path = r"S:\test_labels.png"
+label_path = r"S:\test_labels2.png"
 real_photo_path = r"example.png"
 output_path = r"S:\ritm_output"
 
@@ -106,14 +108,28 @@ if __name__ == '__main__':
     regGenerator = RegionGenerator()
 
     #Load photos and process them ----------------------------------------------------------
-    psuedolabel_image = imread(label_path)
-    real_image = imread(real_photo_path)
+    full_res_image = PIL.Image.open(r"S:\2022-01-OCDA-FL1S-P1-CROP\IMAGES\NK1_2646.JPG")
+    full_res_image.apply_transparency()
 
+    full_res_size = (full_res_image.width, full_res_image.height)
+
+    psuedolabel_image = PIL.Image.open(r"S:\2022-01-OCDA-FL1S-P1-CROP\output\PseudoLabel_NK1_2646.png")
+    psuedolabel_image.apply_transparency()
+
+    psuedolabel_image = psuedolabel_image.resize((full_res_image.width//2, full_res_image.height//2), resample=PIL.Image.Resampling.NEAREST)
+    real_image = full_res_image.resize((full_res_image.width//2, full_res_image.height//2), resample=PIL.Image.Resampling.LANCZOS)
+
+    real_image = np.array(real_image)
+    psuedolabel_image = np.array(psuedolabel_image)
+    full_res_image = np.array(full_res_image)
+
+    """
     if psuedolabel_image.shape[-1] == 4:
         psuedolabel_image = psuedolabel_image[..., :3]  # Remove alpha
 
     if real_image.shape[-1] == 4:
         real_image = real_image[..., :3]  # Remove alpha
+    """
     #---------------------------------------------------------------------------------------
 
     #Generate Labels -----------------------------------------------------------------------
@@ -122,26 +138,51 @@ if __name__ == '__main__':
     label_image, regions = regions.getRegions(psuedolabel_image)
     regionMap = RegionMap(real_image, label_image, regions)
 
-    outputLabelMap(label_image, "label_map.png")
-    outputRegionMap(psuedolabel_image, regionMap)
-    log.print_info(f"Found {len(regions)} regions.")
-    for region in regions.values():
-        print(region)
-    #---------------------------------------------------------------------------------------
+    if False:
+        outputLabelMap(label_image, "label_map.png")
+        outputRegionMap(psuedolabel_image, regionMap)
+        log.print_info(f"Found {len(regions)} regions.")
+        for region in regions.values():
+            print(region)
+        #---------------------------------------------------------------------------------------
 
-    #Debug Output---------------------------------------------------------------------------
-    for region in regionMap.getRegions():
-        if not os.path.isdir(rf"S:\ritm_output\{region.id}"):
-            os.mkdir(rf"S:\ritm_output\{region.id}")
+        #Debug Output---------------------------------------------------------------------------
+        for region in regionMap.getRegions():
+            if not os.path.isdir(rf"S:\ritm_output\{region.id}"):
+                os.mkdir(rf"S:\ritm_output\{region.id}")
 
-        outputImage(regionMap.extractFromImage(region.id), rf"{region.id}\image.png")
-        outputDistanceMask(regionMap.generateDistanceMask(region.id), rf"{region.id}\distance_mask.png")
-        outputSDF(regionMap.generateSDF(region.id), rf"{region.id}\sdf.png")
-        outputLabelMap(regionMap.extractMask(region.id), rf"{region.id}\mask.png")
-    #---------------------------------------------------------------------------------------
+            outputImage(regionMap.extractFromImage(region.id), rf"{region.id}\image.png")
+            outputDistanceMask(regionMap.generateDistanceMask(region.id), rf"{region.id}\distance_mask.png")
+            outputSDF(regionMap.generateSDF(region.id), rf"{region.id}\sdf.png")
+            outputLabelMap(regionMap.extractMask(region.id), rf"{region.id}\mask.png")
+        #---------------------------------------------------------------------------------------
 
     #Generate new segmentation--------------------------------------------------------------
-    regGenerator.generate(regionMap)
+    result = regGenerator.generate(full_res_image, regionMap)
+    #---------------------------------------------------------------------------------------
+
+    #Upscale segmentation and apply to original image---------------------------------------
+    result = cv2.resize(result, full_res_size, interpolation=cv2.INTER_LANCZOS4)
+    pil_img2 = Image.fromarray(result)
+    pil_img2.save(rf"S:\ritm_output\result_accumulate_high.png")
+
+    #Apply mask to original image
+    result_mask = result[:, :, 3] > 0
+    output = full_res_image.copy()
+
+    maskColor = result[result_mask]
+    alpha = maskColor[:, 3]
+    maskColor = maskColor[:, :3]
+
+    originalColor = output[result_mask]
+
+    alpha = alpha / 255.0
+    alpha = alpha[:, None] #Questo serve per avere questo array della dimensione giusta per l'operazione a riga sotto.
+
+    finalColor = (originalColor*(1-alpha)) + (maskColor*alpha)
+    output[result_mask] = finalColor.astype(np.uint8)
+    pil_img2 = Image.fromarray(output)
+    pil_img2.save(rf"S:\ritm_output\output.png")
     #---------------------------------------------------------------------------------------
 
     #Setup PyGame --------------------------------------------------------------------------
