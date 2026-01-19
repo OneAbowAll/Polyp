@@ -130,7 +130,7 @@ if __name__ == '__main__':
         finished_files += 1
         print(f"Time to process image: {time.time() - start_time_region} seconds.")
         print(f"Currently at {finished_files}/{len(photos)}")
-        print(f"RegionMapQueue status: {regionsQueue.qsize()}")
+        print(f"RegionMapQueue current size: {regionsQueue.qsize()}")
 
     for w in workers:
         w.join()

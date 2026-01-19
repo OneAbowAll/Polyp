@@ -13,11 +13,9 @@ import imgui
 from imgui.integrations.pygame import PygameRenderer
 
 import log
-import debug_draw
-import shader
-import texture
-from fbo import Fbo
-from renderable import *
+from rendering import shader, texture, debug_draw
+from rendering.fbo import Fbo
+from rendering.renderable import *
 
 import arcball
 import metashape_loader

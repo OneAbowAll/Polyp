@@ -7,6 +7,7 @@ from tkinter import filedialog
 #masks_path 
 #mesh_name
 
+#TODO: Riadattare per i miei scopi, resta cmq molto utile
 def open_dir_dialog():
     root = tk.Tk()
     root.withdraw()  # Hide the Tkinter main window
