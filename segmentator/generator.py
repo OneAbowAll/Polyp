@@ -3,15 +3,9 @@ import os.path
 import random
 from typing import Tuple
 
-import cv2
-import numpy as np
-import skimage
 import torch
+import numpy as np
 from PIL import Image, ImageDraw
-from jinja2.compiler import generate
-from mpmath.math2 import sqrt2
-from pyglm.glm import clamp
-from skimage.color import rgb2gray, gray2rgb
 
 import log
 from models.isegm.inference import clicker
@@ -48,7 +42,7 @@ class RegionGenerator:
     def __init__(self):
         self.predictor = loadNetwork()
 
-    def generate(self, full_res_photo, regionMap: RegionMap):
+    def generate(self, regionMap: RegionMap, type_colors: list[Tuple[int, int, int]] = None):
         #Test with first region
         regions = regionMap.getRegions()
         ritm_clicker = clicker.Clicker()  # handles clicked point (original code of ritm)
@@ -57,8 +51,7 @@ class RegionGenerator:
         result_accumulate = np.zeros((regionMap.image.shape[0], regionMap.image.shape[1], 4), dtype=np.uint8)
 
         for region in regions:
-            log.print_info(f"Segmenting Region_Id: {region.id}...")
-            [minY, minX, maxY, maxX] = region.bbox
+            log.print_info(f"\tSegmenting Region_Id: {region.id}...")
 
             #Crop image to region
             cropped = regionMap.extractFromImage(region.id)
@@ -78,7 +71,7 @@ class RegionGenerator:
 
             #Genera piu' segmentazioni e salva il risultato nella accumulate_mask
             for k in range(10):
-                main_size = max(region.height, region.width)
+                main_size = min(region.width, region.height)
 
                 #TODO: i positive points devono essere spreaddati, in qualche modo
                 positives = self.generatePositivePoints(distance_mask, region,4, main_size/20)
@@ -100,6 +93,11 @@ class RegionGenerator:
                 #Accumula segmentazione generata
                 accumulate_mask[segm_mask] += 1
 
+                #Reset per la prossima iterazione
+                ritm_clicker.reset_clicks()
+
+                continue
+                [minY, minX, maxY, maxX] = region.bbox
 
                 #Disegna la segmentazione sull'immagine originale (anche qui serve per debugging)
                 result_all_segments[minY:maxY, minX:maxX][segm_mask, 0] = random.randint(0, 255)
@@ -131,60 +129,36 @@ class RegionGenerator:
                 txt = rf"S:\ritm_output\{region.id}\test_{k}.png"
                 pil_img2.save(txt)
 
-                #Reset per la prossima iterazione
-                ritm_clicker.reset_clicks()
 
-            average = cropped.copy()
 
             #Usiamo i "voti" delle segmentazioni del ritm per generare una segmentazione adeguata
             final_mask = accumulate_mask > 5
+
+            """Salva per dubugging
+            average = cropped.copy()
             average[final_mask, 0] = 255
             average[final_mask, 1] = 255
             average[final_mask, 2] = 255
 
-            #Salva per dubugging
             pil_img2 = Image.fromarray(average)
             pil_img2.save(rf"S:\ritm_output\{region.id}\average.png")
+            """
 
             #Aggiungi al risultato finale evidenziando le varie segmentazioni
             [minY, minX, maxY, maxX] = region.bbox
-            #selection_alpha = 0.6
-            selection_color = np.array([random.randint(1, 255), random.randint(1, 255), random.randint(1, 255), 153])
+            if type_colors is None:
+                selection_color = np.array([random.randint(1, 255), random.randint(1, 255), random.randint(1, 255), 153])
+            else:
+                selection_color = np.array([*type_colors[region.type_id], 153])
 
             regionOfInterest = result_accumulate[minY:maxY, minX:maxX]
             regionOfInterest[final_mask] = selection_color.astype(np.uint8)
 
-            #finalColor = (originalColor*(1-selection_alpha)) + (selection_color*selection_alpha)
-            #regionOfInterest[final_mask] = finalColor.astype(np.uint8)
-
         #Sempre roba di debugging
-        result_image = Image.fromarray(result_all_segments)
-        result_image.save(r"S:\ritm_output\complete.png")
+        #result_image = Image.fromarray(result_all_segments)
+        #result_image.save(r"S:\ritm_output\complete.png")
 
         return result_accumulate
-
-        result_accumulate = cv2.resize(result_accumulate, (8256, 5504), interpolation=cv2.INTER_LANCZOS4)
-        pil_img2 = Image.fromarray(result_accumulate)
-        pil_img2.save(rf"S:\ritm_output\result_accumulate_high.png")
-
-        selection_alpha = 0.6
-
-        result_mask = result_accumulate[:, :, 3] > 0
-        output = full_res_photo.copy()
-
-        maskColor = result_accumulate[result_mask]
-        alpha = maskColor[:, 3]
-        maskColor = maskColor[:, :3]
-
-        originalColor = output[result_mask]
-
-        alpha = alpha / 255.0
-        alpha = alpha[:, None]
-
-        finalColor = (originalColor*(1-alpha)) + (maskColor*alpha)
-        output[result_mask] = finalColor.astype(np.uint8)
-        pil_img2 = Image.fromarray(output)
-        pil_img2.save(rf"S:\ritm_output\output.png")
 
     def generatePositivePoints(self, distance_map, region:Region, amount, minDistance = 0):
         result = []

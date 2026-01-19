@@ -3,8 +3,9 @@ from typing import Tuple
 
 
 class Region:
-    def __init__(self, id:int, padding:int,  bbox: Tuple[int, int, int, int]):
+    def __init__(self, id:int, type_id:int, padding:int,  bbox: Tuple[int, int, int, int]):
         self.id: int = id
+        self.type_id: int = type_id
         self.bbox: Tuple[int, int, int, int] = bbox
         self.padding = padding
 

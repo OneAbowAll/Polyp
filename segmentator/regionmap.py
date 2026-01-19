@@ -6,10 +6,12 @@ from segmentator.region import Region
 
 
 class RegionMap:
-    def __init__(self, image, label_map, regions: dict[int, Region]):
+    def __init__(self, name, image, label_map, regions: dict[int, Region], types_colors: np.ndarray):
+        self.name = name
         self.image = image
         self.label_map = label_map
         self.regions = regions
+        self.types_colors = types_colors
 
     def getRegions(self) -> list[Region]:
         return list(self.regions.values())
