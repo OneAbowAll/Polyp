@@ -6,14 +6,16 @@ from typing import Tuple
 import torch
 import numpy as np
 from PIL import Image, ImageDraw
+from skimage.morphology import binary_erosion, disk
 
 import log
+import application_config as config
+
 from models.isegm.inference import clicker
 from models.isegm.inference import utils as ritmutils
 from models.isegm.inference.predictors import get_predictor
 from segmentator.region import Region
 from segmentator.regionmap import RegionMap
-
 
 def loadNetwork():
     predictor = None
@@ -70,12 +72,12 @@ class RegionGenerator:
             init_mask = init_mask.to("cuda:0")
 
             #Genera piu' segmentazioni e salva il risultato nella accumulate_mask
-            for k in range(10):
+            for k in range(config.RITM_ITER_AMOUNT):
                 main_size = min(region.width, region.height)
 
                 #TODO: i positive points devono essere spreaddati, in qualche modo
-                positives = self.generatePositivePoints(distance_mask, region,4, main_size/20)
-                negatives = self.generateNegativePoints(distance_mask, region,8, main_size/8)
+                positives = self.generatePositivePoints(distance_mask, region,config.P_POINTS_AMOUNT, main_size/20)
+                negatives = self.generateNegativePoints(distance_mask, region,config.N_POINTS_AMOUNT, main_size/8)
 
                 #Genera i punti
                 for p in positives:
@@ -96,53 +98,40 @@ class RegionGenerator:
                 #Reset per la prossima iterazione
                 ritm_clicker.reset_clicks()
 
-                continue
-                [minY, minX, maxY, maxX] = region.bbox
+                if config.DEBUG_PRINT_ALL_RITM_SEGMENTATIONS:
+                    [minY, minX, maxY, maxX] = region.bbox
 
-                #Disegna la segmentazione sull'immagine originale (anche qui serve per debugging)
-                result_all_segments[minY:maxY, minX:maxX][segm_mask, 0] = random.randint(0, 255)
-                result_all_segments[minY:maxY, minX:maxX][segm_mask, 1] = random.randint(0, 255)
-                result_all_segments[minY:maxY, minX:maxX][segm_mask, 2] = random.randint(0, 255)
+                    #Disegna la segmentazione sull'immagine originale (anche qui serve per debugging)
+                    result_all_segments[minY:maxY, minX:maxX][segm_mask, 0] = random.randint(0, 255)
+                    result_all_segments[minY:maxY, minX:maxX][segm_mask, 1] = random.randint(0, 255)
+                    result_all_segments[minY:maxY, minX:maxX][segm_mask, 2] = random.randint(0, 255)
 
-                #Porta la prediction in un formato "disegnabile" (principalmente per debugging)
-                output = cropped.copy()
-                output[segm_mask, 0] = 255
-                output[segm_mask, 1] = 255
-                output[segm_mask, 2] = 255
-                pil_img2 = Image.fromarray(output)
+                    #Porta la prediction in un formato "disegnabile" (principalmente per debugging)
+                    output = cropped.copy()
+                    output[segm_mask, 0] = 255
+                    output[segm_mask, 1] = 255
+                    output[segm_mask, 2] = 255
+                    pil_img2 = Image.fromarray(output)
 
-                #Disegna segmentazione ee punti generati alla k-esima iterazione
-                draw = ImageDraw.Draw(pil_img2)
-                for click in ritm_clicker.get_clicks():
-                    x = click.coords[1]
-                    y = click.coords[0]
-                    if click.is_positive:
-                        color = (0, 255, 0)
-                    else:
-                        color = (255, 0, 0)
+                    #Disegna segmentazione ee punti generati alla k-esima iterazione
+                    draw = ImageDraw.Draw(pil_img2)
+                    for click in ritm_clicker.get_clicks():
+                        x = click.coords[1]
+                        y = click.coords[0]
+                        if click.is_positive:
+                            color = (0, 255, 0)
+                        else:
+                            color = (255, 0, 0)
 
-                    draw.circle((x, y), 2.0, fill=color)
+                        draw.circle((x, y), 2.0, fill=color)
 
-                if not os.path.isdir(rf"S:\ritm_output\{region.id}"):
-                    os.mkdir(rf"S:\ritm_output\{region.id}")
-
-                txt = rf"S:\ritm_output\{region.id}\test_{k}.png"
-                pil_img2.save(txt)
-
-
+                    if not os.path.isdir(os.path.join(config.RITM_OUTPUT_PATH, "debug", f"{region.id}")):
+                        os.mkdir(os.path.join(config.RITM_OUTPUT_PATH, "debug", f"{region.id}"))
+                    pil_img2.save(os.path.join(config.RITM_OUTPUT_PATH, "debug", f"{region.id}", f"iter_{k}.png"))
 
             #Usiamo i "voti" delle segmentazioni del ritm per generare una segmentazione adeguata
-            final_mask = accumulate_mask > 5
-
-            """Salva per dubugging
-            average = cropped.copy()
-            average[final_mask, 0] = 255
-            average[final_mask, 1] = 255
-            average[final_mask, 2] = 255
-
-            pil_img2 = Image.fromarray(average)
-            pil_img2.save(rf"S:\ritm_output\{region.id}\average.png")
-            """
+            final_mask = accumulate_mask > config.VOTE_THRESHOLD
+            final_mask = binary_erosion(final_mask, disk(config.EROSION_AMOUNT))
 
             #Aggiungi al risultato finale evidenziando le varie segmentazioni
             [minY, minX, maxY, maxX] = region.bbox
@@ -153,10 +142,6 @@ class RegionGenerator:
 
             regionOfInterest = result_accumulate[minY:maxY, minX:maxX]
             regionOfInterest[final_mask] = selection_color.astype(np.uint8)
-
-        #Sempre roba di debugging
-        #result_image = Image.fromarray(result_all_segments)
-        #result_image.save(r"S:\ritm_output\complete.png")
 
         return result_accumulate
 

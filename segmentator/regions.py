@@ -7,10 +7,11 @@ from PIL import Image as Image, ImageDraw
 from skimage.color import label2rgb
 from skimage.measure import label, regionprops
 
-from image_test import OUTPUT_PATH
+import application_config as config
 from segmentator.region import Region
 from segmentator.regionmap import RegionMap
 
+OUTPUT_PATH1 = r"S:\ritm_output"
 
 def getRegions(image):
     unique_colors = np.unique(image.reshape(-1, 3), axis=0)
@@ -40,7 +41,7 @@ def getRegions(image):
 
     padding_amount = 20
     for region in regions:
-        if region.area > 200:
+        if region.area > 300:
             [minY, minX, maxY, maxX] = region.bbox
             newBbox = (
                 max(minY - padding_amount, 0),
@@ -72,14 +73,14 @@ def outputRegionMap(image, regionMap : RegionMap):
             text = f"{region.id}",
             fill = random_color
         )
-    image.save(os.path.join(OUTPUT_PATH, "debug_regions.png"))
+    image.save(os.path.join(config.RITM_OUTPUT_PATH, "debug_regions.png"))
 
 
 def outputLabelMap(label_map, filepath):
     image_float = label2rgb(label_map, bg_label=0, bg_color=(0, 0, 0))
     image_uint8 = (image_float * 255).astype(np.uint8)
     pil_image = Image.fromarray(image_uint8)
-    pil_image.save(os.path.join(OUTPUT_PATH, filepath))
+    pil_image.save(os.path.join(config.RITM_OUTPUT_PATH, filepath))
 
 def outputDistanceMask(distance_mask, filepath):
     shape = distance_mask.shape
@@ -92,7 +93,7 @@ def outputDistanceMask(distance_mask, filepath):
             result[i][j] = [v, v, v]
 
     pil_image = Image.fromarray(result)
-    pil_image.save(os.path.join(OUTPUT_PATH, filepath))
+    pil_image.save(os.path.join(config.RITM_OUTPUT_PATH, filepath))
 
 
 def outputSDF(sdf, filepath):
@@ -112,12 +113,11 @@ def outputSDF(sdf, filepath):
             result[i][j] = [v1, 0, v2]
 
     pil_image = Image.fromarray(result)
-    pil_image.save(os.path.join(OUTPUT_PATH, filepath))
-
+    pil_image.save(os.path.join(config.RITM_OUTPUT_PATH, filepath))
 
 def outputImage(image, filepath):
     image = Image.fromarray(image)
-    image.save(os.path.join(OUTPUT_PATH, filepath))
+    image.save(os.path.join(config.RITM_OUTPUT_PATH, filepath))
 
 def reMap(value, maxInput, minInput, maxOutput, minOutput):
 

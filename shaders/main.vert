@@ -3,7 +3,7 @@
 in vec3 aPosition;
 in vec2 aTexCoord;
 
-out vec3 vPos;
+out vec4 vPos;
 out vec3 vOrthoPos;
 out vec2 vTexCoord;
 
@@ -68,7 +68,7 @@ vec2 xyz_to_uv(vec3 p)
 
 void main(void)
 {
-    vPos = aPosition;
+    vPos = vec4(aPosition, 1);
     vOrthoPos = (uOrthoProj * uOrthoView * uModel*vec4(aPosition, 1.0)).xyz;
     vTexCoord = aTexCoord;
 
@@ -79,6 +79,7 @@ void main(void)
         //gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.0*focmm), 1.0);
 
         vec4 pos = uProj*uView*uModel*vec4(aPosition, 1.0);
+        vPos = pos;
         gl_Position = pos;
 
     }

@@ -13,12 +13,15 @@ import imgui
 from imgui.integrations.pygame import PygameRenderer
 
 import log
+import application_config as config
 from rendering import shader, texture, debug_draw
 from rendering.fbo import Fbo
 from rendering.renderable import *
 
 import arcball
 import metashape_loader
+
+OUTPUT_PATH = r"S:\ritm_output"
 
 class RenderMode(IntEnum):
     LABEL_ONLY = 0
@@ -231,11 +234,11 @@ def load_filepaths():
     else:
         with open("last.txt", "r") as f:
             lines = f.read().splitlines()
-            if len(lines) >= 5:
+            if len(lines) >= 4:
                 main_path = lines[0]
                 imgs_path = lines[1]
-                mesh_name = lines[3]
-                metashape_file = lines[4]
+                mesh_name = lines[2]
+                metashape_file = lines[3]
             else:
                 print("[ERROR] last.txt does not contain enough lines.")
 
@@ -281,6 +284,7 @@ def build_proj_matrix(sensor, near = 1.0, far = 100.0, overscan_factor=1.2):
     )
 
 def main():
+    config.init()
     glm.silence(4)
     Image.MAX_IMAGE_PIXELS = 181159576
 
@@ -304,18 +308,15 @@ def main():
     log.print_info(f"OpenGL Version: {glGetString(GL_VERSION).decode()}")
     log.print_info(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION).decode()}\n")
 
-    #Load filepaths
-    MAIN_PATH, IMGS_PATH, MESH_NAME, METASHAPE_FILE = load_filepaths()
-
     #Load Sensors & Cameras
-    sensors = metashape_loader.load_sensors_from_xml( os.path.join(MAIN_PATH, METASHAPE_FILE) )
+    sensors = metashape_loader.load_sensors_from_xml( config.METASHAPE_FILE )
     log.print_info(f"Loaded {len(sensors)} sensors.\n")
     for i in range(0, len(sensors)):
         log.print_info(f"[{i}] => {{ \n")
         log.print_info(f"{sensors[i]}\n")
         log.print_info(f"}}\n")
     
-    cameras, chunk_rot, chunk_transl, chunk_scal = metashape_loader.load_cameras_from_xml( os.path.join(MAIN_PATH, METASHAPE_FILE) )
+    cameras, chunk_rot, chunk_transl, chunk_scal = metashape_loader.load_cameras_from_xml( config.METASHAPE_FILE )
     chunk_rot = np.array(chunk_rot)
     chunk_transl = np.array(chunk_transl)
 
@@ -340,7 +341,7 @@ def main():
     screen_quad = create_quad_buffer()
 
     #Load mesh
-    vertices, faces, wed_tcoords, bbox_min, bbox_max, texture_id, tex_w, tex_h = load_mesh( os.path.join(MAIN_PATH, MESH_NAME) )
+    vertices, faces, wed_tcoords, bbox_min, bbox_max, texture_id, tex_w, tex_h = load_mesh( config.MESH_FILE )
     rend = renderable(
         vao = create_mesh_buffers(vertices, wed_tcoords, faces, SHADER_MAIN),
         n_verts = len(vertices),
@@ -386,12 +387,13 @@ def main():
     """* glm.rotate(glm.radians(180), glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(180), glm.vec3(0, 0, 1))"""
 
     #Import Label map
-    label_map, label_width, label_height = texture.load_texture(os.path.join(MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST, False)
+    label_map, label_width, label_height = texture.load_texture(os.path.join(config.MAIN_PATH, "TAGLAB", "label.png"), GL_NEAREST, False)
 
     #Application settings
     view_mode = ViewMode.ORTHO
     render_mode = RenderMode.TEXTURE_ONLY
     selected_camera_id = 0
+    selected_photo_id = 0
 
     show_origin_frame = True
     show_camera_frames = True
@@ -583,7 +585,7 @@ def main():
                         frameBytes = glReadPixels(0, 0, sensor_width, sensor_height, GL_RGB, GL_UNSIGNED_BYTE, None)
                         result = Image.frombuffer("RGB", (sensor_width, sensor_height), frameBytes, "raw", "RGB", 0, 1)
                         result = ImageOps.flip(result)
-                        result.save(os.path.join(MAIN_PATH, "output", "PseudoLabel_" + cameras[i].label + ".png"))
+                        result.save(os.path.join(config.PSEUDOLABEL_OUTPUT_PATH, "PseudoLabel_" + cameras[i].label + ".png"))
 
                         print(f"{i+1}/{length} rendered.")
 
@@ -657,7 +659,7 @@ def main():
                     frameBytes = glReadPixels(0, 0, sensor_width, sensor_height, GL_RGB, GL_UNSIGNED_BYTE, None)
                     result = Image.frombuffer("RGB", (sensor_width, sensor_height), frameBytes, "raw", "RGB", 0, 1)
                     result = ImageOps.flip(result)
-                    result.save(os.path.join(MAIN_PATH, "output", "PseudoLabel_" + cameras[selected_camera_id].label + ".png"))
+                    result.save(os.path.join(config.PSEUDOLABEL_OUTPUT_PATH, "PseudoLabel_" + cameras[selected_camera_id].label + ".png"))
 
                 #Riporta allo stato precedente
                 glUseProgram(0)
@@ -674,6 +676,79 @@ def main():
                 imgui.text("- Info --------------------")
                 imgui.text(f"Current camera-id: {cameras[selected_camera_id].id}")
                 imgui.text(f"Current img name: {cameras[selected_camera_id].label}")
+                imgui.end_menu()
+
+            if imgui.begin_menu('Reproject', True).opened:
+                selected_photo_id_changed, selected_photo_id = imgui.input_int("Photo ID", selected_photo_id, 1, 100)
+                imgui.text(f"Current img name: {cameras[selected_photo_id].label}")
+
+                if imgui.button('Reproject image on model'):
+                    label_photo,_,_ = texture.load_texture(os.path.join(OUTPUT_PATH, "output", f"{cameras[selected_photo_id].label}.png"), GL_LINEAR, mipmap = False)
+
+                    if label_photo is None:
+                        print(f"{cameras[selected_photo_id].label} is not available")
+
+                    sensor = sensors[cameras[selected_photo_id].sensor_id]
+
+                    sensor_width = sensor.resolution["width"]
+                    sensor_height = sensor.resolution["height"]
+                    overscan_width = int(sensor_width * OVERSCAN)
+                    overscan_height = int(sensor_height * OVERSCAN)
+
+                    OVERSCAN_FBO = Fbo(overscan_width, overscan_height, GL_NEAREST)
+                    SAVE_FBO = Fbo(sensor_width, sensor_height, GL_NEAREST)
+
+                    # Disegna il modello sul framebuffer con dell'overscan
+                    glBindFramebuffer(GL_FRAMEBUFFER, OVERSCAN_FBO.id_fbo)
+                    glViewport(0, 0, overscan_width, overscan_height)
+                    # pygame.display.set_mode((overscan_width, overscan_height), pygame.OPENGL|pygame.DOUBLEBUF)
+
+                    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+                    glEnable(GL_DEPTH_TEST)
+
+                    glUseProgram(SHADER_MAIN.program)
+                    glActiveTexture(GL_TEXTURE0)
+                    glBindTexture(GL_TEXTURE_2D, label_photo)
+                    SHADER_MAIN.set_int("uViewMode", ViewMode.CAMERA)
+                    SHADER_MAIN.set_int("uReprojectionTex", 0)
+
+                    SHADER_MAIN.set_int("uRenderMode", 3)
+                    SHADER_MAIN.set_mat4("uProj", build_proj_matrix(sensor, OVERSCAN))
+                    SHADER_MAIN.set_mat4("uView", glm.inverse(camera_matrices[selected_photo_id]))
+
+                    glBindVertexArray(rend.vao)
+                    glDrawArrays(GL_TRIANGLES, 0, rend.n_faces * 3)
+                    SHADER_MAIN.set_int("uViewMode", view_mode)
+                    SHADER_MAIN.set_int("uRenderMode", render_mode)
+                    glBindVertexArray(0)
+                    glUseProgram(0)
+
+                    # Applica il post processing sulla texture del framebuffer
+                    glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
+                    glViewport(0, 0, sensor_width, sensor_height)
+                    # pygame.display.set_mode((sensor_width, sensor_height), pygame.OPENGL|pygame.DOUBLEBUF)
+                    glClear(int(GL_COLOR_BUFFER_BIT) | int(GL_DEPTH_BUFFER_BIT))
+                    glDisable(GL_DEPTH_TEST)  # Don't need depth for post-processing
+
+                    glUseProgram(SHADER_QUAD.program)
+                    set_sensor(SHADER_QUAD, sensor, OVERSCAN)
+                    glBindVertexArray(screen_quad)
+
+                    glActiveTexture(GL_TEXTURE0)
+                    glBindTexture(GL_TEXTURE_2D, OVERSCAN_FBO.id_color)
+                    glDrawArrays(GL_TRIANGLES, 0, 6)
+
+                    glBindVertexArray(0)
+                    glUseProgram(0)
+
+                    # Salva a texture il risultato
+                    glBindFramebuffer(GL_FRAMEBUFFER, SAVE_FBO.id_fbo)
+                    frameBytes = glReadPixels(0, 0, sensor_width, sensor_height, GL_RGB, GL_UNSIGNED_BYTE, None)
+                    result = Image.frombuffer("RGB", (sensor_width, sensor_height), frameBytes, "raw", "RGB", 0, 1)
+                    result = ImageOps.flip(result)
+                    result.save(
+                        os.path.join(config.MAIN_PATH, "Reprojected_" + cameras[selected_photo_id].label + ".png"))
+
                 imgui.end_menu()
 
             imgui.end_main_menu_bar()

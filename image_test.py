@@ -8,33 +8,30 @@ import cv2
 import numpy as np
 import PIL.Image as Image
 
+import application_config as config
+import log
 import segmentator.regions as Regions
 from segmentator.generator import RegionGenerator
 from segmentator.regionmap import RegionMap
+from segmentator.regions import outputRegionMap
 
-SOURCE_IMAGES_FOLDER = r"S:\2022-01-OCDA-FL1S-P1-CROP\IMAGES"
-PSEUDOLABEL_FOLDER = r"S:\2022-01-OCDA-FL1S-P1-CROP\output"
-
-OUTPUT_PATH = r"S:\ritm_output"
-
-NO_BG = True
-WORKERS_AMOUNT = 4
-
-DEBUG_PRINT = False
-
-def generateRegionMap(files_to_proces, regions_output : Queue):
+def generateRegionMap(files_to_proces, regions_output : Queue, imgs_path, pse_label_path, ritm_output_path):
     for file_name in files_to_proces:
-        full_res_image_path = os.path.join(SOURCE_IMAGES_FOLDER, file_name)
+        full_res_image_path = os.path.join(imgs_path, file_name)
         if os.path.isdir(full_res_image_path):
+            log.print_info(f"Skipping {full_res_image_path}")
             continue
 
         file_name = file_name.split(".")[0]
-        label_image_path = os.path.join(PSEUDOLABEL_FOLDER, f"PseudoLabel_{file_name}.png")
+        label_image_path = os.path.join(pse_label_path, f"PseudoLabel_{file_name}.png")
 
         if not os.path.exists(label_image_path):
+            print(label_image_path)
+            log.print_warning(f"Need to generate {label_image_path}")
             continue
 
-        if os.path.exists(os.path.join(OUTPUT_PATH, "output", f"{file_name}.png")):
+        if os.path.exists(os.path.join(ritm_output_path, f"{file_name}.png")):
+            log.print_info(f"{file_name} already exists, skipping")
             continue
 
         #Load photos and process them ----------------------------------------------------------
@@ -44,7 +41,6 @@ def generateRegionMap(files_to_proces, regions_output : Queue):
         psuedolabel_image_file = PIL.Image.open(label_image_path)
         psuedolabel_image_file.apply_transparency()
 
-        full_res_size = (full_res_image_file.width, full_res_image_file.height)
         low_res_size = (full_res_image_file.width // 2, full_res_image_file.height // 2)
 
         psuedolabel_image_file = psuedolabel_image_file.resize(low_res_size, resample=PIL.Image.Resampling.NEAREST)
@@ -56,34 +52,40 @@ def generateRegionMap(files_to_proces, regions_output : Queue):
         label_image, regions, type_colors = Regions.getRegions(psuedolabel_image)
         regions_output.put(RegionMap(file_name, real_image, label_image, regions, type_colors))
 
+        if config.DEBUG_PRINT_REGIONMAP: #Questa cosa non e' particolarmente eccezionale ma per ora ok.
+            outputRegionMap(psuedolabel_image, RegionMap(file_name, real_image, label_image, regions, type_colors))
+
         full_res_image_file.close()
         psuedolabel_image_file.close()
 
     regions_output.put(None) #Segnala al consumatore che questo thread ha finito di lavorare
 
 if __name__ == '__main__':
-
+    config.init()
     start_time = time.time()
 
     regGenerator = RegionGenerator()
-    photos = os.listdir(SOURCE_IMAGES_FOLDER)
+    photos = os.listdir(config.IMGS_PATH)
 
-    chunk_size = len(photos) // WORKERS_AMOUNT
+    chunk_size = len(photos) // config.WORKERS_AMOUNT
 
     workers = []
-    regionsQueue = multiprocessing.Queue(maxsize=WORKERS_AMOUNT)
+    regionsQueue = multiprocessing.Queue(maxsize=config.WORKERS_AMOUNT)
     finished_workers = 0
     finished_files = 0
-    for i in range(WORKERS_AMOUNT):
-        (a, b) = (i*chunk_size, ((i+1)*chunk_size)if i != WORKERS_AMOUNT-1 else len(photos))
+    for i in range(config.WORKERS_AMOUNT):
+        (a, b) = (i*chunk_size, ((i+1)*chunk_size)if i != config.WORKERS_AMOUNT-1 else len(photos))
 
         worker_target = photos[a:b]
-        worker = multiprocessing.Process(target=generateRegionMap, args=(worker_target, regionsQueue))
+        worker = multiprocessing.Process(
+            target=generateRegionMap,
+            args=(worker_target, regionsQueue, config.IMGS_PATH, config.PSEUDOLABEL_OUTPUT_PATH, config.RITM_OUTPUT_PATH)
+        )
 
         workers.append(worker)
         worker.start()
 
-    while finished_workers < WORKERS_AMOUNT:
+    while finished_workers < config.WORKERS_AMOUNT:
         start_time_region = time.time()
         regionMap = regionsQueue.get()
 
@@ -96,12 +98,12 @@ if __name__ == '__main__':
         #---------------------------------------------------------------------------------------
 
         #Upscale segmentation and apply to original image---------------------------------------
-        full_res_image_path = os.path.join(SOURCE_IMAGES_FOLDER, f"{regionMap.name}.jpg")
+        full_res_image_path = os.path.join(config.IMGS_PATH, f"{regionMap.name}.jpg")
         full_res_image_file = PIL.Image.open(full_res_image_path)
 
         result = cv2.resize(result, (full_res_image_file.width, full_res_image_file.height), interpolation=cv2.INTER_LANCZOS4)
 
-        if not NO_BG:
+        if config.GENERATE_WITH_ORIGINAL_BG:
             full_res_image_file.apply_transparency()
             full_res_image =  np.array(full_res_image_file)
 
@@ -124,7 +126,7 @@ if __name__ == '__main__':
             output = result[:, :, :3]
 
         pil_img = Image.fromarray(output)
-        pil_img.save(os.path.join(r"S:\ritm_output\output", f"{regionMap.name}.png"))
+        pil_img.save(os.path.join(config.RITM_OUTPUT_PATH, f"{regionMap.name}.png"))
         full_res_image_file.close()
 
         finished_files += 1
