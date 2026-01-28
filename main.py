@@ -215,39 +215,6 @@ def load_mesh(filename):
     
     return vertices, faces, wed_tcoord, bbox_min, bbox_max, texture_id, w, h
 
-def load_filepaths():
-    """ 
-        Try to read the filepaths from sys.argv or last.txt.\n
-        Output:
-        - main_path
-        - imgs_path
-        - mesh_name
-        - metashape_file 
-    """
-    main_path = imgs_path = mesh_name = metashape_file = ""
-    
-    if len(sys.argv) == 4:
-        main_path = sys.argv[1]
-        imgs_path = sys.argv[2]
-        mesh_name = sys.argv[3]
-        metashape_file = sys.argv[4]
-    else:
-        with open("last.txt", "r") as f:
-            lines = f.read().splitlines()
-            if len(lines) >= 4:
-                main_path = lines[0]
-                imgs_path = lines[1]
-                mesh_name = lines[2]
-                metashape_file = lines[3]
-            else:
-                print("[ERROR] last.txt does not contain enough lines.")
-
-    log.print_info(f"Main path: {main_path}")
-    log.print_info(f"Images path: {imgs_path}")
-    log.print_info(f"Mesh: {mesh_name}")
-    log.print_info(f"Metashape file: {metashape_file}\n")
-    return main_path, imgs_path, mesh_name, metashape_file
-
 def set_sensor(shader: shader.Shader, sensor, overscanFactor = 1.2):
     shader.set_int("resolution_width", sensor.resolution["width"])
     shader.set_int("resolution_height", sensor.resolution["height"])
@@ -683,7 +650,7 @@ def main():
                 imgui.text(f"Current img name: {cameras[selected_photo_id].label}")
 
                 if imgui.button('Reproject image on model'):
-                    label_photo,_,_ = texture.load_texture(os.path.join(OUTPUT_PATH, "output", f"{cameras[selected_photo_id].label}.png"), GL_LINEAR, mipmap = False)
+                    label_photo,_,_ = texture.load_texture(os.path.join(config.RITM_OUTPUT_PATH, f"{cameras[selected_photo_id].label}.png"), GL_LINEAR, mipmap = False)
 
                     if label_photo is None:
                         print(f"{cameras[selected_photo_id].label} is not available")
